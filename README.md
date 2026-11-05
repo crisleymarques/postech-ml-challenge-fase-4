@@ -2,7 +2,12 @@
 
 Projeto do Tech Challenge da Fase 4 da pós-graduação em Machine Learning Engineering da PosTech, desenvolvido em equipe de três integrantes.
 
-O [contexto do projeto](docs/CONTEXTO_PROJETO.md) reúne os requisitos acadêmicos, os entregáveis, os critérios de avaliação e as decisões pendentes. Esse documento será atualizado conforme o grupo definir objetivos, escopo e implementação.
+Este projeto é a camada de sustentação e confiabilidade de um modelo de Credit
+Scoring: contratos de qualidade de dados, simulação de degradação (Data e Concept
+Drift), detecção com observabilidade e governança sob a LGPD. A documentação reside
+em [docs/](docs/), com a [arquitetura e os contratos entre componentes](docs/ARQUITETURA.md)
+e a [seleção e análise do dataset](docs/DATASET.md). Esses documentos são atualizados
+conforme o grupo define escopo e implementação.
 
 ## Ambiente de desenvolvimento
 
@@ -68,8 +73,8 @@ As pastas inicialmente vazias contêm .gitkeep para preservar a
 estrutura no Git.
 
 O conteúdo de data/reference/ e data/analysis/ está excluído do
-versionamento, exceto pelos arquivos .gitkeep. A fonte e o procedimento
-de obtenção dos dados serão documentados após a escolha do dataset.
+versionamento, exceto pelos arquivos .gitkeep. Os arquivos brutos ficam em
+data/reference/raw/ e a base derivada em data/reference/sample/.
 
 ## Verificações do ambiente
 
@@ -113,6 +118,23 @@ equipe. Scripts, contratos Pandera, treinamento, simulação, detecção e
 dashboard ainda não estão implementados. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
 
+## Dataset — PREP-02
+
+O dataset escolhido é o **Lending Club Loan Data**, obtido no Kaggle
+(`wordsforthewise/lending-club`). O arquivo de empréstimos aceitos possui
+2.260.701 linhas e 151 colunas; usamos apenas os registros com desfecho
+definitivo.
+
+Para viabilizar o trabalho, o script
+[src/monitoramento/selecao_dataset.py](src/monitoramento/selecao_dataset.py)
+gera de forma reprodutível uma base derivada de **100.000 linhas** em
+`data/reference/sample/lending_club_sample_100k.csv`, mantendo `Fully Paid` e
+`Charged Off` e preservando o eixo temporal `issue_d`.
+
+A análise completa — origem, alvo, principais features, qualidade, candidatas a
+drift e campos pessoais/sensíveis (LGPD) — está em
+[docs/DATASET.md](docs/DATASET.md).
+
 ## Modelos
 
 A pasta models/ armazena os modelos gerados localmente. Seus arquivos
@@ -150,9 +172,13 @@ Concluídos:
 - Criação da estrutura de pastas e das regras de exclusão dos dados.
 - Definição documental da arquitetura, contratos entre etapas e estratégia
   de observabilidade com Streamlit na PREP-03, para revisão da equipe.
+- Seleção e análise do dataset na PREP-02, com geração da base derivada de
+  100.000 linhas e documentação em docs/DATASET.md.
 
 Pendentes:
 
+- Confirmação da licença de uso do dataset.
+- Definição do schema de negócio, das regras rígidas de qualidade e da
+  estratégia de separação das partições.
 - Validação funcional do ambiente com dados sintéticos.
-- Definição do dataset, objetivo específico, métricas e regras de qualidade.
-- Implementação do pipeline e das evidências acadêmicas.
+- Implementação do pipeline (contratos, treino, simulação, detecção, dashboard).
