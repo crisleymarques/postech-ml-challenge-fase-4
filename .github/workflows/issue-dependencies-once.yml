@@ -1,0 +1,74 @@
+name: Configure native issue dependencies (one-off)
+
+on:
+  push:
+    paths:
+      - '.github/workflows/issue-dependencies-once.yml'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  configure:
+    if: github.repository == 'crisleymarques/postech-ml-challenge-fase-4'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add blocked-by relationships with GitHub REST API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          base = f"https://api.github.com/repos/{repo}/issues"
+          # Only genuine integration gates. Independent tasks can proceed in parallel.
+          blocked_by = {
+              9: [8],             # Demonstrate blocking <- data contract
+              11: [7, 10],       # Production predictions <- baseline and simulated data
+              13: [12],          # Statistical analysis <- drift report
+              17: [13, 15, 16],  # Alerts integration <- drift + logs + metrics
+              18: [17],          # Monitoring dashboard <- integrated events
+              21: [13, 14],      # Causal analysis <- data drift and concept drift
+              22: [18, 19, 20, 21], # Consolidated README <- evidence + governance
+              23: [9, 11, 13, 18],  # End to end validation <- required components
+              24: [5, 23],       # STAR video <- plan and validated demo
+              25: [22, 24],      # Final submission <- README and video
+          }
+
+          def request(method, url, body=None):
+              payload = json.dumps(body).encode() if body is not None else None
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "tech-challenge-dependency-linker",
+              }
+              req = Request(url, method=method, data=payload, headers=headers)
+              with urlopen(req, timeout=30) as res:
+                  data = res.read()
+                  return json.loads(data) if data else None
+
+          ids = {}
+          created = 0
+          for target, blockers in blocked_by.items():
+              existing = request("GET", f"{base}/{target}/dependencies/blocked_by")
+              existing_numbers = {issue["number"] for issue in existing}
+              for blocker in blockers:
+                  if blocker in existing_numbers:
+                      print(f"EXISTS: #{target} blocked by #{blocker}")
+                      continue
+                  if blocker not in ids:
+                      ids[blocker] = request("GET", f"{base}/{blocker}")["id"]
+                  request("POST", f"{base}/{target}/dependencies/blocked_by", {"issue_id": ids[blocker]})
+                  created += 1
+                  print(f"CREATED: #{target} blocked by #{blocker}", flush=True)
+                  time.sleep(1)
+          print(f"SUCCESS: {created} native GitHub issue dependencies created.")
+          PY
