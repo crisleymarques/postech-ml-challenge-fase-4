@@ -11,11 +11,6 @@ uv, arquivos como interface e dashboard Streamlit. O setup fornece pandas,
 scikit-learn, Pandera e Evidently. Não são necessárias novas dependências
 para esta alteração documental.
 
-Fonte acadêmica: [enunciado do Tech Challenge](<../9mlet-fase4/MLET - Tech Challenge - Fase 4.pdf>),
-especialmente páginas 3–6: separação de referência e produção, bloqueio de
-ingestão, simulação, detecção e alternativa de dashboard para observabilidade.
-O [contexto](CONTEXTO_PROJETO.md) registra as demais exigências e pendências.
-
 ## Fluxo e responsabilidades
 
 ```mermaid
