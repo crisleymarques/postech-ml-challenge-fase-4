@@ -223,3 +223,6 @@ __marimo__/
 !/data/reference/.gitkeep
 /data/analysis/*
 !/data/analysis/.gitkeep
+
+/models/*
+!/models/.gitkeep

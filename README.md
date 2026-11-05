@@ -58,6 +58,7 @@ src/
 tests/               # Testes automatizados
 notebooks/           # Exploração e experimentação
 reports/             # Relatórios e evidências
+models/
 data/
 ├── reference/       # Dados de referência
 └── analysis/        # Dados de análise/produção simulada
@@ -87,6 +88,33 @@ A análise estática também passou.
 Essas verificações não validam o pipeline. Ainda não foram implementados
 testes funcionais, contratos de dados, treinamento, experimentos de drift
 ou dashboard.
+
+## Modelos
+
+A pasta models/ armazena os modelos gerados localmente. Seus arquivos
+não são versionados, exceto pelo .gitkeep. O procedimento de geração
+será documentado quando o treinamento for implementado.
+
+## Convenção de commits
+
+Os commits seguem o formato:
+
+tipo: descrição curta
+
+| Tipo | Uso |
+|---|---|
+| feat | Nova funcionalidade |
+| fix | Correção de erro |
+| docs | Alteração na documentação |
+| test | Criação ou alteração de testes |
+| refactor | Reorganização de código sem mudar o comportamento |
+| chore | Configuração, dependências e manutenção |
+
+Exemplos:
+
+- chore: configura ambiente com uv
+- feat: adiciona contrato de dados
+- test: verifica rejeição de lote inválido
 
 ## Estado atual
 
