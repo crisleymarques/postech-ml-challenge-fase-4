@@ -94,7 +94,7 @@ Essas verificações não validam o pipeline. Ainda não foram implementados
 testes funcionais, contratos de dados, treinamento, experimentos de drift
 ou dashboard.
 
-## Arquitetura e contratos — PREP-03
+## Arquitetura e contratos
 
 A arquitetura definida para implementação é um pipeline local em lote:
 preparação e separação → validação de dados → treinamento e avaliação;
@@ -105,7 +105,7 @@ ao modelo. Todas as etapas exportam eventos e resultados para monitoramento.
 O dashboard **Streamlit** foi escolhido para observabilidade, com eventos
 JSONL, métricas JSON e relatórios HTML do Evidently. MLflow não integra a
 arquitetura base. As métricas específicas e os limiares serão definidos pelo
-grupo nas tarefas de implementação.
+grupo durante a implementação.
 
 Os [contratos entre componentes](docs/ARQUITETURA.md) detalham o diagrama,
 os formatos CSV/JSON/JSONL, manifestos, argumentos futuros dos scripts,
@@ -113,8 +113,7 @@ estados de execução e artefatos produzidos por etapa. Dados de treino,
 validação e teste ficam separados da base e dos lotes de produção simulada;
 a referência de drift é congelada a partir das features de treino.
 
-Esta definição é documental, autorizada pelo responsável para revisão da
-equipe. Scripts, contratos Pandera, treinamento, simulação, detecção e
+Scripts, contratos Pandera, treinamento, simulação, detecção e
 dashboard ainda não estão implementados. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
 
@@ -174,6 +173,8 @@ Concluídos:
   de observabilidade com Streamlit na PREP-03, para revisão da equipe.
 - Seleção e análise do dataset na PREP-02, com geração da base derivada de
   100.000 linhas e documentação em docs/DATASET.md.
+- Definição da arquitetura, contratos entre etapas e estratégia
+  de observabilidade com Streamlit.
 
 Pendentes:
 

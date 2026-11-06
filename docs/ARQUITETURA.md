@@ -1,15 +1,14 @@
-# Arquitetura e contratos entre componentes — PREP-03
+# Arquitetura e contratos entre componentes
 
 ## Estado e escopo
 
-Definição documental da issue #4, para revisão da equipe no PR. Os componentes, 
-comandos e arquivos de saída descritos aqui são interfaces para implementação 
-futura; ainda não foram implementados nem validados funcionalmente.
+Este documento define a arquitetura e os contratos entre componentes do
+pipeline. Os componentes, comandos e arquivos de saída descritos aqui ainda
+não foram implementados nem validados funcionalmente.
 
-A direção acordada nesta tarefa é um pipeline local em lote, com Python 3.12,
-uv, arquivos como interface e dashboard Streamlit. O setup fornece pandas,
-scikit-learn, Pandera e Evidently. Não são necessárias novas dependências
-para esta alteração documental.
+A arquitetura é um pipeline local em lote, com Python 3.12, uv, arquivos como
+interface e dashboard Streamlit. As dependências incluem pandas,
+scikit-learn, Pandera e Evidently.
 
 ## Fluxo e responsabilidades
 
@@ -71,7 +70,7 @@ falhar e registrar o erro, sem gerar aprovação implícita.
 As quatro partições devem ser disjuntas. Estratégia de divisão, proporções,
 estratificação, agrupamento ou corte temporal dependem do dataset e da decisão
 da equipe. Sua configuração e seed devem constar no manifesto. Nenhuma
-proporção é fixada nesta tarefa.
+proporção está definida.
 
 O alvo não participa dos testes de drift das features. Identificadores de
 linha servem somente ao alinhamento, não ao ajuste do modelo ou à detecção.
@@ -229,7 +228,7 @@ rótulos simulados são identificados como simulação em todos os relatórios.
 
 ## Observabilidade escolhida
 
-**Decisão desta tarefa: dashboard Streamlit, com eventos JSONL e métricas
+**Estratégia de observabilidade definida: dashboard Streamlit, com eventos JSONL e métricas
 exportadas em JSON, acompanhados dos relatórios HTML do Evidently.**
 A justificativa é aproveitar o setup existente, permitir leitura de resultados
 locais e atender à alternativa de dashboard interativo do enunciado, sem
@@ -246,9 +245,9 @@ Cada `metrics.json` contém `run_id` e lista `measurements`, com objetos
 `name`, `value`, `unit` e `availability`. `value` é número ou nulo;
 `availability` é `available`, `not_available` ou `not_applicable`.
 
-O catálogo abaixo é uma proposta para a tarefa de monitoramento, ainda
-dependente da decisão do grupo; esta tarefa define a interface e o caminho
-de exportação, sem aprovar métricas ou limiares específicos:
+O catálogo abaixo apresenta medidas candidatas de monitoramento. A interface
+e o caminho de exportação estão definidos; a seleção das métricas e de seus
+limiares permanece pendente:
 
 | Categoria | Medidas candidatas | Apresentação esperada |
 | --- | --- | --- |
@@ -273,9 +272,10 @@ O prazo de retenção e a revisão de privacidade permanecem na governança.
 
 ## Artefatos, persistência e implementação futura
 
-Os caminhos são contratos planejados; esta tarefa não cria diretórios de
-execução, datasets ou modelos. Dados permanecem em `data/reference/` e
-`data/analysis/`, e modelos em `models/`, conforme as exclusões atuais.
+Os caminhos são contratos planejados; os diretórios de execução, datasets
+e modelos serão gerados pelos componentes do pipeline. Dados ficam em
+`data/reference/` e `data/analysis/`, e modelos em `models/`, conforme as
+exclusões atuais.
 `reports/` não possui exclusão geral no setup: logs, configurações e relatórios
 não devem ser publicados automaticamente. A equipe deve revisar seu conteúdo
 e definir retenção e eventual exclusão antes de produzi-los ou compartilhá-los.
@@ -284,15 +284,7 @@ Nenhuma etapa usa bancos de dados. A execução local futura será documentada
 quando os módulos existirem. Automação, API de serving, nuvem e retreinamento
 automático exigem decisão posterior de escopo.
 
-## Critérios de aceite e pendências
-
-| Critério da PREP-03 | Evidência documental |
-| --- | --- |
-| Arquitetura e fluxo documentados | Diagrama, responsabilidades e bloqueios |
-| Entradas e saídas padronizadas | Formatos, manifesto, argumentos, estados e saídas específicas |
-| Referência e produção distinguidas | Papéis, caminhos, congelamento e separação das partições |
-| Observabilidade escolhida | Streamlit com arquivos JSON/JSONL e relatórios Evidently |
-| Artefatos por etapa identificados | Tabelas de componentes, saídas e persistência |
+## Definições pendentes e validação funcional
 
 Pendências para implementação: dataset e licença; schema de negócio;
 estratégia de separação; algoritmo; métricas operacionais e de classificação;
@@ -300,7 +292,7 @@ três ou mais regras de qualidade; cenários e rótulos; testes estatísticos,
 limiares e janelas; governança e retenção. Esses itens não impedem a definição
 das interfaces, mas impedem tratar o pipeline como pronto para execução.
 
-A validação desta tarefa é documental. Os responsáveis pela implementação
-deverão demonstrar aprovação de dados válidos, rejeição do lote inválido,
-isolamento das partições, alinhamento de predições, reprodução dos cenários,
+A validação funcional do pipeline deverá demonstrar aprovação de dados
+válidos, rejeição do lote inválido, isolamento das partições, alinhamento
+de predições, reprodução dos cenários,
 relatório de drift e exibição de sucesso, bloqueio e falha no dashboard.
