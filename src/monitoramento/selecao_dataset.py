@@ -109,11 +109,10 @@ def coletar_definitivos(
 
         if sum(len(item) for item in lotes) > capacidade:
             combinado = pd.concat(lotes, ignore_index=True)
-            escolhidos = rng.choice(len(combinado), size=capacidade, replace=False)
             lotes = [
                 combinado
                 .nsmallest(capacidade, "_prioridade")
-                .iloc[np.sort(escolhidos)].reset_index(drop=True)
+                .reset_index(drop=True)
             ]
 
     if not lotes:
@@ -127,17 +126,40 @@ def coletar_definitivos(
 
 
 def amostra_estratificada(base: pd.DataFrame, n_linhas: int, seed: int) -> pd.DataFrame:
-    """Sorteia `n_linhas` preservando a proporção das classes do alvo."""
+    """Amostra por classe, respeitando o total solicitado.
+
+    Distribui as vagas proporcionalmente às classes da base recebida,
+    atribuindo as vagas restantes às maiores partes decimais das cotas.
+    Se a base tiver menos linhas que o solicitado, retorna todas.
+    """
+    if n_linhas <= 0:
+        raise ValueError("n_linhas deve ser maior que zero.")
+
     if n_linhas >= len(base):
         return base.sample(frac=1, random_state=seed).reset_index(drop=True)
 
-    proporcoes = base[ALVO].value_counts(normalize=True)
+    contagens = base[ALVO].value_counts()
+    cotas = n_linhas * contagens / len(base)
+    quantidades = np.floor(cotas).astype(int)
+
+    faltantes = n_linhas - int(quantidades.sum())
+    prioridades = (cotas - quantidades).sort_values(
+        ascending=False,
+        kind="stable"
+    )
+    quantidades.loc[prioridades.index[:faltantes]] += 1
+
     partes = []
-    for rotulo, proporcao in proporcoes.items():
+    for rotulo, quantidade in quantidades.items():
         grupo = base[base[ALVO] == rotulo]
-        n_grupo = max(1, round(n_linhas * proporcao))
-        partes.append(grupo.sample(n=min(n_grupo, len(grupo)), random_state=seed))
-    return pd.concat(partes).sample(frac=1, random_state=seed).reset_index(drop=True)
+        partes.append(
+            grupo.sample(n=int(quantidade), random_state=seed)
+        )
+    return (
+        pd.concat(partes)
+        .sample(frac=1, random_state=seed)
+        .reset_index(drop=True)
+    )
 
 
 def main() -> None:
