@@ -67,7 +67,6 @@ models/
 data/
 ├── reference/       # Dados de referência
 └── analysis/        # Dados de análise/produção simulada
-docs/                # Contexto e registro de alterações
 ```
 As pastas inicialmente vazias contêm .gitkeep para preservar a
 estrutura no Git.
@@ -169,8 +168,6 @@ Concluídos:
 - Instalação das dependências de execução e desenvolvimento.
 - Configuração inicial de Ruff e pytest.
 - Criação da estrutura de pastas e das regras de exclusão dos dados.
-- Definição documental da arquitetura, contratos entre etapas e estratégia
-  de observabilidade com Streamlit na PREP-03, para revisão da equipe.
 - Seleção e análise do dataset na PREP-02, com geração da base derivada de
   100.000 linhas e documentação em docs/DATASET.md.
 - Definição da arquitetura, contratos entre etapas e estratégia
