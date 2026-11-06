@@ -2,8 +2,6 @@
 
 Projeto do Tech Challenge da Fase 4 da pós-graduação em Machine Learning Engineering da PosTech, desenvolvido em equipe de três integrantes.
 
-O [contexto do projeto](docs/CONTEXTO_PROJETO.md) reúne os requisitos acadêmicos, os entregáveis, os critérios de avaliação e as decisões pendentes. Esse documento será atualizado conforme o grupo definir objetivos, escopo e implementação.
-
 ## Ambiente de desenvolvimento
 
 O projeto utiliza Python 3.12 e uv para gerenciar o ambiente e as
@@ -62,7 +60,6 @@ models/
 data/
 ├── reference/       # Dados de referência
 └── analysis/        # Dados de análise/produção simulada
-docs/                # Contexto e registro de alterações
 ```
 As pastas inicialmente vazias contêm .gitkeep para preservar a
 estrutura no Git.
