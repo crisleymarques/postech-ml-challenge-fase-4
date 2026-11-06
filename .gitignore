@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+/data/reference/*
+!/data/reference/.gitkeep
+/data/analysis/*
+!/data/analysis/.gitkeep
+
+/models/*
+!/models/.gitkeep
