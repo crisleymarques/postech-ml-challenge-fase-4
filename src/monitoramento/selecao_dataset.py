@@ -75,6 +75,11 @@ def coletar_definitivos(
 ) -> tuple[pd.DataFrame, int, int]:
     """Coleta desfechos definitivos em lotes, com afinamento para limitar a memória.
 
+    Atribui uma prioridade aleatória a cada registro elegível e mantém os
+    registros com as menores prioridades, até o limite de `capacidade`.
+    Isso evita favorecer os últimos lotes e limita a memória ao buffer
+    retido e ao lote em processamento.
+
     Retorna a base retida (no máximo `capacidade` linhas), o total de linhas lidas
     e o total de desfechos definitivos encontrados antes do afinamento.
     """
@@ -97,15 +102,28 @@ def coletar_definitivos(
         if aprovados.empty:
             continue
         total_definitivos += len(aprovados)
+
+        aprovados = aprovados.copy()
+        aprovados["_prioridade"] = rng.random(len(aprovados))
         lotes.append(aprovados)
+
         if sum(len(item) for item in lotes) > capacidade:
             combinado = pd.concat(lotes, ignore_index=True)
             escolhidos = rng.choice(len(combinado), size=capacidade, replace=False)
-            lotes = [combinado.iloc[np.sort(escolhidos)].reset_index(drop=True)]
+            lotes = [
+                combinado
+                .nsmallest(capacidade, "_prioridade")
+                .iloc[np.sort(escolhidos)].reset_index(drop=True)
+            ]
 
     if not lotes:
         return pd.DataFrame(columns=colunas), total_lidas, total_definitivos
-    return pd.concat(lotes, ignore_index=True), total_lidas, total_definitivos
+    return (
+        pd.concat(lotes, ignore_index=True)
+        .drop(columns="_prioridade"),
+        total_lidas,
+        total_definitivos
+    )
 
 
 def amostra_estratificada(base: pd.DataFrame, n_linhas: int, seed: int) -> pd.DataFrame:
