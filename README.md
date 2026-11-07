@@ -9,6 +9,16 @@ em [docs/](docs/), com a [arquitetura e os contratos entre componentes](docs/ARQ
 e a [seleção e análise do dataset](docs/DATASET.md). Esses documentos são atualizados
 conforme o grupo define escopo e implementação.
 
+## Documentação
+
+| Documento | Conteúdo |
+|---|---|
+| [Contexto do projeto](docs/CONTEXTO_PROJETO.md) | Requisitos acadêmicos, decisões e pendências |
+| [Arquitetura e contratos](docs/ARQUITETURA.md) | Fluxo proposto, interfaces e artefatos entre componentes |
+| [Dataset — PREP-02](docs/DATASET.md) | Origem, download, amostragem, análise e limitações dos dados |
+| [Registro de alterações](docs/REGISTRO_DE_ALTERACOES.md) | Autorizações, alterações e validações documentadas |
+| [Instruções do repositório](AGENTS.md) | Regras de orientação, execução e privacidade |
+
 ## Ambiente de desenvolvimento
 
 O projeto utiliza Python 3.12 e uv para gerenciar o ambiente e as
@@ -32,6 +42,7 @@ no uv.lock. Não é necessário ativar o ambiente ao usar uv run.
 
 | Ferramenta | Finalidade |
 |---|---|
+| KaggleHub | Download do arquivo bruto do Lending Club quando ausente |
 | NumPy e pandas | Manipulação e processamento de dados |
 | SciPy | Testes estatísticos |
 | scikit-learn | Preparação dos dados e modelo baseline |
@@ -89,9 +100,9 @@ Durante o setup, foram verificadas a consistência das dependências,
 as importações das bibliotecas e a disponibilidade de Ruff e pytest.
 A análise estática também passou.
 
-Essas verificações não validam o pipeline. Ainda não foram implementados
-testes funcionais, contratos de dados, treinamento, experimentos de drift
-ou dashboard.
+Essas verificações não validam o pipeline completo. A preparação do dataset
+possui testes isolados descritos abaixo; contratos de dados, treinamento,
+experimentos de drift e dashboard permanecem pendentes.
 
 ## Arquitetura e contratos
 
@@ -112,7 +123,8 @@ estados de execução e artefatos produzidos por etapa. Dados de treino,
 validação e teste ficam separados da base e dos lotes de produção simulada;
 a referência de drift é congelada a partir das features de treino.
 
-Scripts, contratos Pandera, treinamento, simulação, detecção e
+O script de obtenção e amostragem do dataset está implementado. Separação
+das partições, contratos Pandera, treinamento, simulação, detecção e
 dashboard ainda não estão implementados. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
 
@@ -132,6 +144,66 @@ gera de forma reprodutível uma base derivada de **100.000 linhas** em
 A análise completa — origem, alvo, principais features, qualidade, candidatas a
 drift e campos pessoais/sensíveis (LGPD) — está em
 [docs/DATASET.md](docs/DATASET.md).
+
+### Download e geração da amostra
+
+Após `uv sync --locked`, execute no PowerShell, na raiz do projeto:
+
+```powershell
+uv run python src/monitoramento/selecao_dataset.py
+```
+
+Se o CSV padrão estiver ausente, o script baixa apenas
+`accepted_2007_to_2018Q4.csv.gz` via KaggleHub, descompacta em diretório
+temporário e confere as colunas antes de disponibilizar a origem em
+`data/reference/raw/accepted_2007_to_2018Q4.csv`.
+Nas próximas execuções, reutiliza esse CSV sem novo download.
+A amostra é gerada novamente a cada execução, sobrescrevendo a saída escolhida.
+Um `--source` personalizado inexistente gera erro, sem download automático.
+
+Para preservar a amostra principal ao experimentar, informe outra saída:
+
+```powershell
+uv run python src/monitoramento/selecao_dataset.py --output data/reference/sample/lending_club_teste.csv
+```
+
+Caso o Kaggle exija autenticação, configure-a interativamente, sem colocar
+credenciais no código:
+
+```powershell
+uv run python -c "import kagglehub; kagglehub.login()"
+```
+
+As duas execuções apresentadas pelo responsável em 07/11/2026 confirmaram
+download inicial e reutilização local. Ambas reportaram 2.260.701 linhas lidas,
+1.345.310 desfechos definitivos e amostra de 100.000 linhas e 30 colunas:
+80.116 `Fully Paid` e 19.884 `Charged Off`.
+Contagens iguais não comprovam identidade dos arquivos byte a byte.
+A versão remota do dataset ainda não está fixada; um novo download futuro
+pode obter uma versão diferente.
+
+### Testes da obtenção do dataset
+
+```powershell
+uv run pytest tests/test_download_dataset.py -q
+```
+
+Para executar todos os testes disponíveis:
+
+```powershell
+uv run pytest
+```
+
+Os quatro testes de download usam simulações e conteúdo sintético, sem
+acessar a rede ou o dataset real. Cobrem origem local existente, download
+inicial seguido de reutilização, falha sem origem parcial e origem
+personalizada ausente. O responsável informou aprovação dos quatro testes.
+
+O `pyproject.toml` configura `--basetemp=.venv/pytest-tmp`, evitando a pasta
+temporária do sistema que apresentou erro de permissão no ambiente local.
+Esse diretório é exclusivo dos testes: o pytest limpa seu conteúdo a cada
+execução. Essa validação não cobre o pipeline completo nem substitui contratos
+de qualidade, treinamento e monitoramento.
 
 ## Modelos
 
@@ -170,13 +242,19 @@ Concluídos:
 - Criação da estrutura de pastas e das regras de exclusão dos dados.
 - Seleção e análise do dataset na PREP-02, com geração da base derivada de
   100.000 linhas e documentação em docs/DATASET.md.
+- Download automático do arquivo bruto ausente e reutilização local via KaggleHub,
+  com quatro testes isolados aprovados segundo o responsável e duas execuções
+  reais apresentadas na conversa.
 - Definição da arquitetura, contratos entre etapas e estratégia
   de observabilidade com Streamlit.
 
 Pendentes:
 
 - Confirmação da licença de uso do dataset.
+- Fixação da versão remota do dataset e revisão das estatísticas anteriores
+  para a amostra atual, conforme ressalvas em docs/DATASET.md.
 - Definição do schema de negócio, das regras rígidas de qualidade e da
   estratégia de separação das partições.
-- Validação funcional do ambiente com dados sintéticos.
+- Validação funcional integrada do pipeline com dados sintéticos, além dos
+  testes isolados de obtenção do dataset.
 - Implementação do pipeline (contratos, treino, simulação, detecção, dashboard).

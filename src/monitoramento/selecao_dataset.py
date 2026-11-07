@@ -15,10 +15,20 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import gzip
+import shutil
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
+import kagglehub
 import numpy as np
 import pandas as pd
+
+DATASET_KAGGLE = "wordsforthewise/lending-club"
+ARQUIVO_KAGGLE = "accepted_2007_to_2018Q4.csv.gz"
+ORIGEM_PADRAO = Path(
+    "data/reference/raw/accepted_2007_to_2018Q4.csv"
+)
 
 ALVO = "loan_status"
 DESFECHOS_DEFINITIVOS = ("Fully Paid", "Charged Off")
@@ -65,6 +75,64 @@ def colunas_disponiveis(origem: Path) -> list[str]:
         raise ValueError(f"Colunas ausentes na origem: {ausentes}")
     return COLUNAS
 
+def garantir_origem(origem: Path) -> None:
+    """Reutiliza a origem local ou baixa o arquivo padrão do Kaggle."""
+    if origem.is_file():
+        print(f"Origem local encontrada; download dispensado: {origem}")
+        return
+
+    if origem.exists():
+        raise ValueError(f"O caminho de origem não é um arquivo: {origem}")
+
+    if origem.resolve() != ORIGEM_PADRAO.resolve():
+        raise FileNotFoundError(
+            f"Origem personalizada não encontrada: {origem}. "
+            "O download automático atende apenas ao caminho padrão."
+        )
+
+    origem.parent.mkdir(parents=True, exist_ok=True)
+    print("Origem ausente; iniciando download do Lending Club.")
+
+    try:
+        with TemporaryDirectory(
+            prefix="lending-club-",
+            dir=origem.parent,
+        ) as diretorio:
+            temporario = Path(diretorio)
+
+            compactado = Path(
+                kagglehub.dataset_download(
+                    DATASET_KAGGLE,
+                    path=ARQUIVO_KAGGLE,
+                    output_dir=str(temporario / "download"),
+                )
+            )
+
+            if not compactado.is_file():
+                raise FileNotFoundError(
+                    "O download não retornou o arquivo esperado."
+                )
+
+            csv_temporario = temporario / origem.name
+
+            with (
+                gzip.open(compactado, "rb") as entrada,
+                csv_temporario.open("wb") as saida,
+            ):
+                shutil.copyfileobj(entrada, saida)
+
+            # Confere o cabeçalho antes de disponibilizar o CSV.
+            colunas_disponiveis(csv_temporario)
+
+            csv_temporario.replace(origem)
+
+    except Exception as erro:
+        raise RuntimeError(
+            "Não foi possível preparar a origem do Lending Club. "
+            "Verifique conexão, espaço em disco e acesso ao Kaggle."
+        ) from erro
+
+    print(f"Origem preparada: {origem}")
 
 def coletar_definitivos(
     origem: Path,
@@ -167,7 +235,7 @@ def main() -> None:
     parser.add_argument(
         "--source",
         type=Path,
-        default=Path("data/reference/raw/accepted_2007_to_2018Q4.csv"),
+        default=ORIGEM_PADRAO,
         help="Caminho da origem bruta.",
     )
     parser.add_argument(
@@ -189,8 +257,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if not args.source.exists():
-        raise FileNotFoundError(f"Origem não encontrada: {args.source}")
+    garantir_origem(args.source)
 
     colunas = colunas_disponiveis(args.source)
     base, total_lidas, total_definitivos = coletar_definitivos(
