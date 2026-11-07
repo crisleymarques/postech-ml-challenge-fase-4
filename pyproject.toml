@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "evidently>=0.7.23",
+    "kagglehub>=1.0.3,<2",
     "numpy>=2.5.4",
     "pandas>=2.2,<3.1",
     "pandera[pandas]>=0.35.0",
@@ -29,3 +30,4 @@ select = ["E", "F", "I"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "--basetemp=.venv/pytest-tmp"
