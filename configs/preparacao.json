@@ -1,0 +1,35 @@
+{
+  "contract_version": "1.0",
+  "stage": "preparacao",
+  "dataset_id": "lending_club_100k",
+  "preparation_id": "lending_club_100k_v1",
+  "source": {
+    "artifact_type": "origem",
+    "path": "data/reference/sample/lending_club_sample_100k.csv",
+    "source_url": "https://www.kaggle.com/datasets/wordsforthewise/lending-club",
+    "license": "A confirmar na pagina do dataset antes de publicacao."
+  },
+  "target": {
+    "column": "loan_status",
+    "positive_class": "Charged Off",
+    "negative_class": "Fully Paid",
+    "positive_value": 1,
+    "negative_value": 0
+  },
+  "split": {
+    "strategy": "temporal",
+    "time_column": "issue_d",
+    "time_format": "%b-%Y",
+    "seed": 42,
+    "proportions": {
+      "train": 0.6,
+      "validation": 0.2,
+      "test": 0.1,
+      "simulation_base": 0.1
+    }
+  },
+  "outputs": {
+    "reference_dir": "data/reference",
+    "analysis_dir": "data/analysis"
+  }
+}
