@@ -98,6 +98,30 @@ A saída é sobrescrita a cada execução. Para preservar a amostra principal,
 use `--output` com outro caminho. Também estão disponíveis `--source`,
 `--n-rows`, `--seed`, `--chunksize` e `--buffer-factor`.
 
+## Separação das partições (F1-01)
+
+A base derivada de 100.000 linhas é dividida em quatro partições disjuntas por
+[preparacao.py](../src/monitoramento/preparacao.py), a partir dos parâmetros de
+[configs/preparacao.json](../configs/preparacao.json). A separação é **temporal**:
+os registros são ordenados por `issue_d` (do mais antigo ao mais recente) e
+recortados em blocos contíguos, evitando vazamento entre treino e avaliação.
+
+| Partição | Linhas | Período (`issue_d`) | Fully Paid | Charged Off | Local |
+|---|---|---|---|---|---|
+| Treino | 60.000 | 2007-07 → 2015-12 | 49.031 | 10.969 | `data/reference/lending_club_100k_v1/train.csv` |
+| Validação | 20.000 | 2015-12 → 2016-10 | 15.407 | 4.593 | `data/reference/lending_club_100k_v1/validation.csv` |
+| Teste | 10.000 | 2016-10 → 2017-07 | 7.628 | 2.372 | `data/reference/lending_club_100k_v1/test.csv` |
+| Produção simulada | 10.000 | 2017-07 → 2018-12 | 8.050 | 1.950 | `data/analysis/lending_club_100k_v1/simulation_base.csv` |
+
+Como o recorte é feito pela ordem das linhas após ordenar por `issue_d`, duas
+partições consecutivas podem compartilhar o mês na fronteira (p.ex. `2015-12`
+entre treino e validação); os registros, porém, permanecem disjuntos. O alvo é
+binarizado (`Charged Off` = 1, `Fully Paid` = 0) e os textos recebem apenas
+`trim` de espaços — nenhum ajuste estatístico é aprendido nesta etapa. A execução
+grava manifesto, eventos e métricas em `reports/runs/<run_id>/`; o contrato
+completo está em [ARQUITETURA.md](ARQUITETURA.md). A etapa está coberta por
+`tests/test_preparacao.py`.
+
 ## Validações apresentadas em 07/11/2026
 
 O responsável executou o script duas vezes e apresentou as saídas:
@@ -268,4 +292,4 @@ reidentificação sob LGPD.
 - Comparar hashes das saídas caso seja necessário comprovar identidade byte a byte.
 - Definir o schema de negócio (tipos, categorias, classe positiva) e as três ou
   mais regras rígidas de qualidade.
-- Definir a estratégia de separação treino/validação/teste e os cenários de drift.
+- Definir os cenários de drift da produção simulada.

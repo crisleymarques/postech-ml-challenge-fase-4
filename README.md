@@ -100,9 +100,9 @@ Durante o setup, foram verificadas a consistência das dependências,
 as importações das bibliotecas e a disponibilidade de Ruff e pytest.
 A análise estática também passou.
 
-Essas verificações não validam o pipeline completo. A preparação do dataset
-possui testes isolados descritos abaixo; contratos de dados, treinamento,
-experimentos de drift e dashboard permanecem pendentes.
+Essas verificações não validam o pipeline completo. A obtenção e a separação
+do dataset possuem testes isolados descritos abaixo; contratos de dados,
+treinamento, experimentos de drift e dashboard permanecem pendentes.
 
 ## Arquitetura e contratos
 
@@ -123,9 +123,9 @@ estados de execução e artefatos produzidos por etapa. Dados de treino,
 validação e teste ficam separados da base e dos lotes de produção simulada;
 a referência de drift é congelada a partir das features de treino.
 
-O script de obtenção e amostragem do dataset está implementado. Separação
-das partições, contratos Pandera, treinamento, simulação, detecção e
-dashboard ainda não estão implementados. A documentação de arquitetura
+Os scripts de obtenção/amostragem do dataset e de preparação e separação das
+partições estão implementados. Contratos Pandera, treinamento, simulação,
+detecção e dashboard ainda não estão implementados. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
 
 ## Dataset — PREP-02
@@ -205,6 +205,35 @@ Esse diretório é exclusivo dos testes: o pytest limpa seu conteúdo a cada
 execução. Essa validação não cobre o pipeline completo nem substitui contratos
 de qualidade, treinamento e monitoramento.
 
+## Preparação e separação das partições — F1-01
+
+O componente [src/monitoramento/preparacao.py](src/monitoramento/preparacao.py)
+lê a base derivada, binariza o alvo (`Charged Off` = 1, `Fully Paid` = 0) e separa
+quatro partições **disjuntas** pela ordem temporal de `issue_d`, conforme os
+parâmetros de [configs/preparacao.json](configs/preparacao.json) (60% treino, 20%
+validação, 10% teste, 10% produção simulada):
+
+```powershell
+uv run python src/monitoramento/preparacao.py --config configs/preparacao.json
+```
+
+| Artefato | Local |
+|---|---|
+| Treino, validação e teste | `data/reference/<preparation_id>/{train,validation,test}.csv` |
+| Base de produção simulada | `data/analysis/<preparation_id>/simulation_base.csv` |
+| Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
+
+A etapa não ajusta imputação, escala ou codificação sobre o conjunto completo:
+apenas faz `trim` nos textos e mantém o alvo binarizado. Ela recusa sobrescrever
+um diretório de partição já existente e encerra com código `0` (sucesso), `2`
+(dados rejeitados) ou `1` (erro técnico). O contrato completo está em
+[docs/ARQUITETURA.md](docs/ARQUITETURA.md) e os resultados da execução real em
+[docs/DATASET.md](docs/DATASET.md).
+
+```powershell
+uv run pytest tests/test_preparacao.py -q
+```
+
 ## Modelos
 
 A pasta models/ armazena os modelos gerados localmente. Seus arquivos
@@ -247,14 +276,17 @@ Concluídos:
   reais apresentadas na conversa.
 - Definição da arquitetura, contratos entre etapas e estratégia
   de observabilidade com Streamlit.
+- Preparação e separação das partições de treino, validação, teste e produção
+  simulada (F1-01), com manifesto, eventos e métricas, e testes em
+  `tests/test_preparacao.py`.
 
 Pendentes:
 
 - Confirmação da licença de uso do dataset.
 - Fixação da versão remota do dataset e revisão das estatísticas anteriores
   para a amostra atual, conforme ressalvas em docs/DATASET.md.
-- Definição do schema de negócio, das regras rígidas de qualidade e da
-  estratégia de separação das partições.
+- Definição do schema de negócio e das regras rígidas de qualidade.
+- Definição dos cenários de drift da produção simulada.
 - Validação funcional integrada do pipeline com dados sintéticos, além dos
-  testes isolados de obtenção do dataset.
+  testes isolados de obtenção e de preparação do dataset.
 - Implementação do pipeline (contratos, treino, simulação, detecção, dashboard).
