@@ -157,6 +157,7 @@ def test_processar_sucesso_gera_particoes_e_manifesto(tmp_path: Path) -> None:
     assert sum(item["row_count"] for item in manifesto["outputs"]) == 10
     for artefato in manifesto["outputs"]:
         assert artefato["producer_run_id"] == "run-1"
+        assert Path(artefato["path"]).parent.name == "prep-v1"
         assert Path(artefato["path"]).is_file()
         assert artefato["sha256"]
     assert (output_dir / "events.jsonl").is_file()
@@ -294,4 +295,3 @@ def test_escrever_particoes_nao_sobrescreve(tmp_path: Path) -> None:
     prep.escrever_particoes(particoes, config, "prep-1", "run-1")
     with pytest.raises(ValueError):
         prep.escrever_particoes(particoes, config, "prep-1", "run-1")
-

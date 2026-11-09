@@ -298,6 +298,6 @@ de predições, reprodução dos cenários,
 relatório de drift e exibição de sucesso, bloqueio e falha no dashboard.
 
 
-### Configuracao invalida e inicio da execucao
+### Configuração inválida e início da execução
 
-A configuracao e validada antes da criacao do diretorio de uma execucao. Se for invalida, o comando termina com codigo 1 e mensagem controlada; como a execucao ainda nao iniciou, nao cria `run_id`, eventos nem manifesto. Depois que o diretorio da execucao e criado, falhas tecnicas ao ler ou preparar a origem sao registradas em eventos e manifesto terminal sempre que a persistencia estiver disponivel.
+A configuração é validada antes da criação do diretório de uma execução. Se for inválida, o comando termina com código 1 e uma mensagem controlada; como a execução ainda não começou, não cria diretório de execução, eventos nem manifesto. Depois que o diretório é criado, falhas técnicas ao ler ou preparar a origem são registradas em eventos e manifesto terminal sempre que a persistência estiver disponível.
