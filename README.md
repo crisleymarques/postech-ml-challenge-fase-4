@@ -234,11 +234,63 @@ um diretório de partição já existente e encerra com código `0` (sucesso), `
 uv run pytest tests/test_preparacao.py -q
 ```
 
-## Modelos
+## Treinamento do modelo baseline — F1-02
+
+O componente [src/monitoramento/treinamento.py](src/monitoramento/treinamento.py)
+consome o manifesto da preparação, ajusta o pipeline no treino, seleciona pela
+validação e avalia no teste, conforme os parâmetros de
+[configs/treinamento.json](configs/treinamento.json):
+
+```powershell
+uv run python src/monitoramento/treinamento.py ^
+  --config configs/treinamento.json ^
+  --input-manifest reports/runs/<run_id_da_preparacao>/manifest.json
+```
+
+| Artefato | Local |
+|---|---|
+| Pipeline persistido | `models/<model_id>/pipeline.pkl` |
+| Metadados do modelo | `models/<model_id>/metadata.json` |
+| Métricas de avaliação | `models/<model_id>/evaluation.json` |
+| Referência congelada | `data/reference/<reference_id>/features.csv` |
+| Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
+
+O `model_id` deriva do `dataset_id`, do algoritmo e do hash SHA-256 do
+descritor do artefato (features, alvo, hiperparâmetros e origem), o que o torna
+reproduzível. A etapa aceita `--config`, `--input-manifest`, `--run-id` e
+`--output-dir`, exige um manifesto de `preparacao` com `status` de sucesso e
+confere o hash de cada partição de entrada. Encerra com código `0` (sucesso), `2`
+(dados rejeitados) ou `1` (erro técnico). O contrato completo está em
+[docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
+```powershell
+uv run pytest tests/test_treinamento.py -q
+```
+
+### Baseline: regressão logística
+
+O baseline usa regressão logística com `class_weight="balanced"`, semente 42 e
+22 features (14 numéricas e 8 categóricas) sobre as partições de referência. O
+`model_id` é `baseline-logreg-820dbb61` e a referência `ref-820dbb61`. A seleção
+do modelo usa `roc_auc` na validação. A classe positiva é `Charged Off` e o
+limiar de decisão é `0.5`.
+
+| Métrica | Treino | Validação | Teste |
+|---|---|---|---|
+| accuracy | 0.6600 | 0.6625 | 0.6626 |
+| precision | 0.2965 | 0.3577 | 0.3641 |
+| recall | 0.6262 | 0.5900 | 0.5658 |
+| f1 | 0.4025 | 0.4454 | 0.4431 |
+| roc_auc | 0.7029 | 0.6961 | 0.6891 |
+
+As métricas são referência para comparação com modelos e cenários futuros. O
+`roc_auc` próximo de 0,69 e a precisão baixa em relação ao recall indicam um
+modelo simples, com muitas features sem tratamento e sem engenharia de
+atributos; esses resultados serão usados como linha de base para medir a
+degradação nos cenários de drift.
 
 A pasta models/ armazena os modelos gerados localmente. Seus arquivos
-não são versionados, exceto pelo .gitkeep. O procedimento de geração
-será documentado quando o treinamento for implementado.
+não são versionados, exceto pelo .gitkeep.
 
 ## Convenção de commits
 
@@ -279,6 +331,9 @@ Concluídos:
 - Preparação e separação das partições de treino, validação, teste e produção
   simulada (F1-01), com manifesto, eventos e métricas, e testes em
   `tests/test_preparacao.py`.
+- Treinamento e avaliação do modelo baseline de Credit Scoring (F1-02), com
+  registro das métricas de classificação por partição, modelo persistido para
+  inferência, referência congelada e testes em `tests/test_treinamento.py`.
 
 Pendentes:
 
@@ -288,5 +343,5 @@ Pendentes:
 - Definição do schema de negócio e das regras rígidas de qualidade.
 - Definição dos cenários de drift da produção simulada.
 - Validação funcional integrada do pipeline com dados sintéticos, além dos
-  testes isolados de obtenção e de preparação do dataset.
-- Implementação do pipeline (contratos, treino, simulação, detecção, dashboard).
+  testes isolados de obtenção, de preparação do dataset e de treinamento.
+- Implementação das etapas restantes do pipeline (simulação, detecção, dashboard).
