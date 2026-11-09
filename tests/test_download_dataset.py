@@ -5,6 +5,7 @@ import pytest
 
 from monitoramento import selecao_dataset as selecao
 
+
 @pytest.fixture
 def origem_padrao(tmp_path, monkeypatch):
     origem = tmp_path / "raw" / "accepted.csv"
@@ -25,9 +26,7 @@ def test_origem_existente_dispensa_download(origem_padrao, monkeypatch):
     assert origem_padrao.read_text(encoding="utf-8") == "arquivo local"
 
 
-def test_primeira_execucao_baixa_e_segunda_reutiliza(
-    origem_padrao, monkeypatch
-):
+def test_primeira_execucao_baixa_e_segunda_reutiliza(origem_padrao, monkeypatch):
     # Apenas um cabeçalho sintético; nenhum dado real.
     conteudo = ",".join(selecao.COLUNAS) + "\n"
 
@@ -63,9 +62,7 @@ def test_falha_nao_deixa_origem_parcial(origem_padrao, monkeypatch):
     assert list(origem_padrao.parent.iterdir()) == []
 
 
-def test_origem_personalizada_ausente_nao_baixa(
-    origem_padrao, tmp_path, monkeypatch
-):
+def test_origem_personalizada_ausente_nao_baixa(origem_padrao, tmp_path, monkeypatch):
     download = Mock()
     monkeypatch.setattr(selecao.kagglehub, "dataset_download", download)
 
