@@ -98,8 +98,9 @@ as importações das bibliotecas e a disponibilidade de Ruff e pytest.
 A análise estática também passou.
 
 Essas verificações não validam o pipeline completo. As etapas de obtenção,
-preparação, treinamento, validação, simulação, predição e detecção de drift
-possuem testes isolados descritos abaixo; o dashboard permanece pendente.
+preparação, treinamento, validação, simulação (Data e Concept Drift), predição,
+detecção e análise de drift possuem testes isolados descritos abaixo; o dashboard
+permanece pendente.
 
 ## Arquitetura e contratos
 
@@ -122,7 +123,8 @@ a referência de drift é congelada a partir das features de treino.
 
 Os scripts de obtenção/amostragem do dataset e de preparação e separação das
 partições estão implementados, assim como o contrato Pandera, o treinamento, a
-simulação, a predição e a detecção de drift. O dashboard ainda não está
+simulação (Data e Concept Drift), a predição, a detecção e a análise estatística
+do drift. O dashboard ainda não está
 implementado. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
 
@@ -618,6 +620,76 @@ não apenas a alteração injetada.
 uv run pytest tests/drift/analise -q
 ```
 
+## Simulação e análise de Concept Drift — F2-05
+
+O Concept Drift é a mudança da relação entre as entradas e o alvo (P(y|X)) — e
+não da distribuição das entradas (P(X)), que é o Data Drift. A F2-05 tem dois
+componentes: um gera o cenário a partir da base reservada de produção e o outro
+compara o desempenho do modelo entre o conceito original e o cenário.
+
+O componente
+[src/monitoramento/simulacao_concept_drift.py](src/monitoramento/simulacao_concept_drift.py)
+mantém as features inalteradas e altera apenas o desfecho de um segmento. No
+cenário de recessão, tomadores `prime` (`fico_range_low >= 700`), historicamente
+considerados seguros, passam a inadimplir mais do que o histórico projetava.
+Somente rótulos negativos podem virar positivos, com probabilidade crescente com
+o FICO e limitada por `max_probability`, escolhidos com semente fixa para
+reprodutibilidade, conforme [configs/simulacao_concept.json](configs/simulacao_concept.json).
+
+| Artefato | Local |
+|---|---|
+| Features inalteradas | `data/analysis/<scenario_id>/<batch_id>/features.csv` |
+| Rótulos do novo conceito | `data/analysis/<scenario_id>/<batch_id>/labels.csv` |
+| Rótulos originais (contraste) | `data/analysis/<scenario_id>/<batch_id>/labels_reference.csv` |
+| Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
+
+```powershell
+uv run python src/monitoramento/simulacao_concept_drift.py ^
+  --config configs/simulacao_concept.json ^
+  --batch-id batch-f205 ^
+  --run-id run-f205-concept
+```
+
+O componente
+[src/monitoramento/avaliacao_concept_drift.py](src/monitoramento/avaliacao_concept_drift.py)
+aplica o pipeline do treinamento sobre as features (inalteradas) e calcula as
+métricas contra os dois conjuntos de rótulos — referência e novo conceito —,
+seguindo [configs/avaliacao_concept.json](configs/avaliacao_concept.json). Como
+os registros e as features são os mesmos, apenas a relação perfil–desfecho muda,
+o que isola a mudança de conceito da mudança de distribuição.
+
+```powershell
+uv run python src/monitoramento/avaliacao_concept_drift.py ^
+  --config configs/avaliacao_concept.json ^
+  --input-manifest reports/runs/<run_treinamento>/manifest.json ^
+  --input-manifest reports/runs/<run_concept_drift>/manifest.json ^
+  --run-id run-f205-avaliacao
+```
+
+| Artefato | Local |
+|---|---|
+| Métricas por conceito, comparação e interpretação | `reports/runs/<run_id>/performance.json` |
+| Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
+
+A degradação é declarada na configuração (`roc_auc`, queda mínima `min_delta`).
+Quando a variação atinge o critério, a execução registra `degradation_detected` e
+emite `drift_alert` com nível `WARNING`, terminando ainda em `success` — um
+alerta não é erro. O documento `performance.json` deixa explícita a diferença
+entre Data Drift, Concept Drift e queda de desempenho: mudar a relação P(y|X) não
+implica, por si só, queda — a degradação é uma consequência possível, não a
+definição. A etapa usa `stage: avaliacao` e aceita `--config`,
+`--input-manifest` (repetível), `--run-id` e `--output-dir`.
+
+Na execução real sobre o cenário `concept-drift` / lote `batch-f205`, 4.890
+registros caíram no segmento e 1.916 rótulos foram alterados (taxa de positivos
+de 0,195 → 0,3866). O `roc_auc` caiu de 0,6825 (conceito original) para 0,4612
+(variação −0,2213), evidenciando degradação associada à mudança de conceito, com
+evento `drift_alert` registrado.
+
+```powershell
+uv run pytest tests/test_simulacao_concept_drift.py tests/test_avaliacao_concept_drift.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -686,13 +758,18 @@ Concluídos:
   Kolmogorov-Smirnov por variável, cruzamento com as variáveis alteradas pela
   simulação, conclusões técnicas em `analise.json` e testes em
   `tests/drift/analise`.
+- Simulação e análise de Concept Drift (F2-05), com cenário de mudança de
+  relação entre perfil e desfecho (P(y|X)) mantendo as features inalteradas,
+  comparação de desempenho entre conceito original e cenário em
+  `performance.json`, evento `drift_alert` sem converter alerta em erro e testes
+  em `tests/test_simulacao_concept_drift.py` e `tests/test_avaliacao_concept_drift.py`.
 
 Pendentes:
 
 - Confirmação da licença de uso do dataset.
 - Fixação da versão remota do dataset e revisão das estatísticas anteriores
   para a amostra atual, conforme ressalvas em docs/DATASET.md.
-- Definição dos demais cenários da produção simulada (controle e concept drift).
+- Definição do cenário de controle da produção simulada.
 - Execução dos testes e Ruff no ambiente definido pelo `uv.lock` após estas
   correções; métricas e resultados históricos não foram reexecutados.
 - Validação funcional integrada do pipeline com dados sintéticos, além dos

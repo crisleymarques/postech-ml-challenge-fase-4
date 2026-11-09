@@ -76,6 +76,8 @@ flowchart TD
 | Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
 | Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
 | `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
+| `simulacao_concept_drift.py` | Gerar cenário de Concept Drift alterando a relação entre perfil e desfecho de um segmento, mantendo as features | Base de simulação, segmento e regra de mudança | Features inalteradas, rótulos do novo conceito, rótulos originais e manifesto do cenário |
+| `avaliacao_concept_drift.py` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
 | Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -147,7 +149,7 @@ Cada etapa produz `reports/runs/<run_id>/manifest.json`. Campos obrigatórios:
 | --- | --- |
 | `contract_version` | String; versão inicial `1.0` para a estrutura das interfaces |
 | `run_id` | String; identificador da execução da etapa |
-| `stage` | Enum: `preparacao`, `validacao`, `treinamento`, `simulacao`, `predicao`, `deteccao`, `analise` |
+| `stage` | Enum: `preparacao`, `validacao`, `treinamento`, `simulacao`, `predicao`, `deteccao`, `analise`, `avaliacao` |
 | `status` | Enum terminal: `success`, `rejected`, `failed`, `skipped` |
 | `started_at`, `finished_at` | Strings ISO 8601 UTC |
 | `config_path` | String; configuração efetivamente utilizada |
@@ -228,6 +230,7 @@ disponíveis para execução agora.
 | Predição | `data/analysis/<scenario_id>/<batch_id>/<model_id>/predictions.csv`, com `record_id`, `prediction` e `score` numérico ou vazio; manifesto informa se `score` está disponível e seu significado; sem probabilidade inventada para modelos que não a forneçam |
 | Detecção | `drift.json` e `drift.html` em `reports/runs/<run_id>/`; resultados por variável com `feature`, `method`, `statistic`, `threshold` e `drift_detected`; métricas de desempenho, quando calculáveis, em `performance.json` |
 | Análise | `analise.json` em `reports/runs/<run_id>/`; resultados por variável com `psi`, `psi_band`, `ks_statistic`, `ks_p_value`, `drift_detected` e `reasons`; cruzamento das variáveis alteradas intencionalmente (`configured`, `confirmed`, `not_confirmed`) e conclusões técnicas |
+| Avaliação | `performance.json` em `reports/runs/<run_id>/`; métricas por conceito (`reference` e `concept_drift`), variações por métrica, critério de degradação declarado, mudança de conceito aplicada e conclusões, separando Data Drift, Concept Drift e queda de desempenho |
 | Todas as etapas | `config.json`, `events.jsonl`, `metrics.json` e `manifest.json` em `reports/runs/<run_id>/` |
 
 O treinamento publica cada modelo e referência em diretórios novos, sem
@@ -267,9 +270,14 @@ Os cenários devem separar:
   importantes, mantendo as regras rígidas quando o objetivo for chegar à
   detecção. Isso separa uma rejeição de qualidade de um alerta estatístico.
 - Concept Drift, com mudança explicitamente definida na relação entre
-  entradas e alvo. O desenho e a disponibilidade de rótulos estão pendentes;
-  mudar features ou apenas inverter rótulos sem justificativa não demonstra,
-  por si só, esse fenômeno no problema de negócio.
+  entradas e alvo. O cenário é produzido por `simulacao_concept_drift.py`,
+  que mantém as features inalteradas e altera o desfecho de um segmento
+  justificado, com risco crescente à medida que o perfil se afasta do limite
+  do segmento e limite de probabilidade configurado. Os rótulos originais e
+  os rótulos do novo conceito são publicados lado a lado, o que permite
+  comparar o desempenho do modelo entre os dois conceitos em
+  `avaliacao_concept_drift.py`. Mudar features ou apenas inverter rótulos sem
+  justificativa não demonstra, por si só, esse fenômeno no problema de negócio.
 
 Data Drift, Concept Drift e queda de desempenho são resultados distintos.
 O dashboard deve apresentar cada evidência com seu contexto. Mudança de
