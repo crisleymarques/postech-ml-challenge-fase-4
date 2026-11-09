@@ -1,0 +1,22 @@
+{
+  "contract_version": "1.0",
+  "stage": "avaliacao",
+  "dataset_id": "lending_club_100k",
+  "identifier": "record_id",
+  "model": {
+    "producer_stage": "treinamento",
+    "pipeline_artifact": "model_pipeline",
+    "metadata_artifact": "model_metadata"
+  },
+  "batch": {
+    "producer_stage": "simulacao",
+    "features_artifact": "features",
+    "labels_artifact": "labels",
+    "reference_labels_artifact": "labels_reference"
+  },
+  "metrics": ["accuracy", "precision", "recall", "f1", "roc_auc"],
+  "degradation": {
+    "metric": "roc_auc",
+    "min_delta": 0.02
+  }
+}
