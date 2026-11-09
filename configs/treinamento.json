@@ -1,0 +1,57 @@
+{
+  "contract_version": "1.0",
+  "stage": "treinamento",
+  "dataset_id": "lending_club_100k",
+  "model_id": "baseline-logreg",
+  "seed": 42,
+  "target": {
+    "column": "loan_status",
+    "positive_class": "Charged Off",
+    "negative_class": "Fully Paid",
+    "positive_value": 1,
+    "negative_value": 0
+  },
+  "features": {
+    "identifier": "record_id",
+    "numeric": [
+      "loan_amnt",
+      "annual_inc",
+      "dti",
+      "delinq_2yrs",
+      "fico_range_low",
+      "fico_range_high",
+      "inq_last_6mths",
+      "open_acc",
+      "pub_rec",
+      "revol_bal",
+      "revol_util",
+      "total_acc",
+      "mort_acc",
+      "pub_rec_bankruptcies"
+    ],
+    "categorical": [
+      "term",
+      "emp_length",
+      "home_ownership",
+      "verification_status",
+      "purpose",
+      "addr_state",
+      "initial_list_status",
+      "application_type"
+    ]
+  },
+  "model": {
+    "algorithm": "logistic_regression",
+    "selection_metric": "roc_auc",
+    "params": {
+      "C": 1.0,
+      "max_iter": 1000,
+      "solver": "lbfgs",
+      "class_weight": "balanced"
+    }
+  },
+  "outputs": {
+    "models_dir": "models",
+    "reference_dir": "data/reference"
+  }
+}
