@@ -485,6 +485,42 @@ estiver disponível. CSVs parciais não são liberados para consumo. O manifesto
 terminal é publicado por último; se a própria persistência de erro falhar,
 uma mensagem controlada é emitida em `stderr`, sem anunciar sucesso.
 
+## Predição sobre os dados simulados de produção — F2-02
+
+O componente [src/monitoramento/predicao.py](src/monitoramento/predicao.py)
+carrega o pipeline do modelo baseline (F1-02) e o lote de features da simulação
+(F2-01), aplica o pré-processamento já embutido no pipeline e gera as
+predições para cada registro. A etapa recebe dois manifestos de entrada
+(treinamento e simulação), confere os hashes dos artefatos, valida que ambos
+pertencem ao mesmo `dataset_id` e publica o resultado em
+`data/analysis/<scenario_id>/<batch_id>/<model_id>/predictions.csv`, seguindo o
+contrato da etapa de predição.
+
+O pipeline persistido foi serializado com os conversores de pré-processamento
+no namespace `__main__` porque o treinamento roda como script. Para que o
+artefato seja lido em outro processo sem alterar o produtor, a predição
+registra os conversores do módulo `monitoramento.treinamento` antes de
+desserializar (`carregar_pipeline`), garantindo consistência do
+pré-processamento com o treinamento.
+
+```powershell
+uv run python src/monitoramento/predicao.py ^
+  --config configs/predicao.json ^
+  --input-manifest reports/runs/<run_treinamento>/manifest.json ^
+  --input-manifest reports/runs/<run_simulacao>/manifest.json ^
+  --run-id run-f202-predicao
+```
+
+O arquivo de saída contém apenas `record_id`, `prediction` (classe prevista com
+limiar 0,5) e `score` (probabilidade estimada da classe `Charged Off`), sem
+revelar o rótulo. Na execução real sobre o cenário `data-drift` / lote
+`batch-f201`, foram geradas 10.000 predições, com taxa de positivos de 57,32%
+e score médio de 0,533.
+
+```powershell
+uv run pytest tests/test_predicao.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -540,6 +576,10 @@ Concluídos:
   intencional da distribuição de cinco features importantes, `features.csv`,
   rótulos em arquivo separado, manifesto com período e parâmetros, e testes em
   `tests/simulacao/data_drift`.
+- Predição sobre os dados simulados de produção (F2-02), reutilizando o modelo
+  baseline e o lote da simulação, com pré-processamento consistente com o
+  treinamento, `predictions.csv` em `data/analysis/` e testes em
+  `tests/test_predicao.py`.
 
 Pendentes:
 
@@ -549,4 +589,7 @@ Pendentes:
 - Definição dos demais cenários da produção simulada (controle e concept drift).
 - Execução dos testes e Ruff no ambiente definido pelo `uv.lock` após estas
   correções; métricas e resultados históricos não foram reexecutados.
-- Implementação das etapas restantes do pipeline (predição, detecção, dashboard).
+- Validação funcional integrada do pipeline com dados sintéticos, além dos
+  testes isolados de obtenção, de preparação do dataset, de treinamento e de
+  validação.
+- Implementação das etapas restantes do pipeline (detecção, dashboard).
