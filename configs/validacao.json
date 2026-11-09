@@ -1,0 +1,71 @@
+{
+  "contract_version": "1.0",
+  "stage": "validacao",
+  "dataset_id": "lending_club_100k",
+  "schema_version": "1.0",
+  "artifacts": ["train", "validation", "test"],
+  "rules": {
+    "identifier": {
+      "column": "record_id",
+      "pattern": "^LC[0-9]{7}$"
+    },
+    "target": {
+      "column": "loan_status",
+      "domain": [0, 1]
+    },
+    "not_null": [
+      "record_id",
+      "loan_amnt",
+      "term",
+      "int_rate",
+      "installment",
+      "grade",
+      "sub_grade",
+      "home_ownership",
+      "annual_inc",
+      "verification_status",
+      "issue_d",
+      "loan_status",
+      "purpose",
+      "addr_state",
+      "delinq_2yrs",
+      "earliest_cr_line",
+      "fico_range_low",
+      "fico_range_high",
+      "inq_last_6mths",
+      "open_acc",
+      "pub_rec",
+      "revol_bal",
+      "total_acc",
+      "initial_list_status",
+      "application_type"
+    ],
+    "unique": ["record_id"],
+    "ranges": {
+      "loan_amnt": [500, 40000],
+      "int_rate": [0, 40],
+      "installment": [0, 5000],
+      "annual_inc": [0, 10000000],
+      "dti": [0, 500],
+      "delinq_2yrs": [0, 100],
+      "fico_range_low": [300, 850],
+      "fico_range_high": [300, 850],
+      "inq_last_6mths": [0, 100],
+      "open_acc": [0, 200],
+      "pub_rec": [0, 100],
+      "revol_bal": [0, 10000000],
+      "revol_util": [0, 1000],
+      "total_acc": [0, 300],
+      "mort_acc": [0, 100],
+      "pub_rec_bankruptcies": [0, 100]
+    },
+    "categories": {
+      "term": ["36 months", "60 months"],
+      "grade": ["A", "B", "C", "D", "E", "F", "G"],
+      "home_ownership": ["MORTGAGE", "RENT", "OWN", "ANY", "NONE", "OTHER"],
+      "verification_status": ["Verified", "Source Verified", "Not Verified"],
+      "application_type": ["Individual", "Joint App"],
+      "initial_list_status": ["w", "f"]
+    }
+  }
+}
