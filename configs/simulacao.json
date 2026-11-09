@@ -1,0 +1,55 @@
+{
+  "contract_version": "1.0",
+  "stage": "simulacao",
+  "dataset_id": "lending_club_100k",
+  "schema_version": "1.0",
+  "scenario_id": "data-drift",
+  "base": {
+    "artifact_type": "origem",
+    "path": "data/analysis/lending_club_100k_v1/simulation_base.csv"
+  },
+  "time": {
+    "column": "issue_d",
+    "format": "%b-%Y",
+    "shift_months": 24
+  },
+  "target": {
+    "column": "loan_status",
+    "positive_class": "Charged Off",
+    "negative_class": "Fully Paid"
+  },
+  "drift": {
+    "seed": 42,
+    "jitter": 0.05,
+    "variables": {
+      "annual_inc": {
+        "operation": "scale",
+        "factor": 0.8,
+        "clip": [0, 10000000]
+      },
+      "revol_util": {
+        "operation": "scale",
+        "factor": 1.35,
+        "clip": [0, 1000]
+      },
+      "dti": {
+        "operation": "shift",
+        "delta": 6.0,
+        "clip": [0, 500]
+      },
+      "fico_range_low": {
+        "operation": "shift",
+        "delta": -25.0,
+        "clip": [300, 850]
+      },
+      "fico_range_high": {
+        "operation": "shift",
+        "delta": -25.0,
+        "clip": [300, 850]
+      }
+    }
+  },
+  "outputs": {
+    "analysis_dir": "data/analysis"
+  }
+}
