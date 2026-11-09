@@ -136,11 +136,13 @@ a aprovação de qualidade vale para aquele hash e `schema_version`.
 Mudanças incompatíveis exigem aumento da versão principal do contrato.
 Consumidores rejeitam versões principais desconhecidas.
 
-O manifesto da validação mantém o CSV verificado em `inputs` e publica o
-relatório de qualidade em `outputs`; não duplica nem reescreve o dataset.
-O consumidor resolve o CSV pelo manifesto aprovado e confere novamente o
-hash. `schema_version` é obrigatoriamente não nulo para aprovação de dados
-e para as etapas que consomem dados aprovados.
+O manifesto da validação mantém os CSVs verificados em `inputs` e publica o
+relatório de qualidade em `outputs`; não duplica nem reescreve o dataset. O
+resumo `quality` liga a aprovação ao `dataset_id`, `schema_version`, tipo e hash
+de cada CSV. O treinamento só resolve as partições pelo manifesto de validação,
+confere esse vínculo e recalcula seus hashes e colunas antes de ajustar o modelo.
+`schema_version` é obrigatoriamente não nulo para aprovação de dados e para as
+etapas que consomem dados aprovados.
 
 Uma etapa dependente exige `success` no produtor e verifica existência,
 hash, schema e IDs compatíveis antes de consumir. Resultados parciais de
@@ -159,9 +161,15 @@ Na implementação, cada módulo de processamento deverá aceitar:
 | `--output-dir` | Diretório novo `reports/runs/<run_id>/` |
 
 Na preparação, o arquivo de origem é indicado em `--config`; não há
-manifesto produtor para essa origem. Os manifestos das partições aprovadas
-são passados ao treinamento. A configuração identifica o papel de cada
-entrada pelo `dataset_id`, sem depender da ordem dos argumentos.
+manifesto produtor para essa origem. O manifesto da preparação é passado à
+validação. Somente o manifesto de validação com `quality.approved: true` pode
+ser passado ao treinamento. A configuração identifica o papel de cada entrada
+pelo `dataset_id` e `schema_version`, sem depender da ordem dos argumentos.
+
+A validação tem os perfis `reference` e `production`. `reference` exige o alvo
+e valida as partições de treino, validação e teste. `production` seleciona o
+artefato `features` e não exige alvo, mantendo identificadores e colunas de
+cenário/lote do CSV sem reescrevê-lo.
 
 Código de saída: `0` para sucesso, `2` para rejeição de qualidade e `1` para
 erro técnico, configuração inválida ou incompatibilidade de artefatos.

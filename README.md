@@ -237,14 +237,14 @@ uv run pytest tests/test_preparacao.py -q
 ## Treinamento do modelo baseline — F1-02
 
 O componente [src/monitoramento/treinamento.py](src/monitoramento/treinamento.py)
-consome o manifesto da preparação, ajusta o pipeline no treino, seleciona pela
+consome o manifesto aprovado pela validação, ajusta o pipeline no treino, seleciona pela
 validação e avalia no teste, conforme os parâmetros de
 [configs/treinamento.json](configs/treinamento.json):
 
 ```powershell
 uv run python src/monitoramento/treinamento.py ^
   --config configs/treinamento.json ^
-  --input-manifest reports/runs/<run_id_da_preparacao>/manifest.json
+  --input-manifest reports/runs/<run_id_da_validacao>/manifest.json
 ```
 
 | Artefato | Local |
@@ -258,9 +258,14 @@ uv run python src/monitoramento/treinamento.py ^
 O `model_id` deriva do `dataset_id`, do algoritmo e do hash SHA-256 do
 descritor do artefato (features, alvo, hiperparâmetros e origem), o que o torna
 reproduzível. A etapa aceita `--config`, `--input-manifest`, `--run-id` e
-`--output-dir`, exige um manifesto de `preparacao` com `status` de sucesso e
-confere o hash de cada partição de entrada. Encerra com código `0` (sucesso), `2`
-(dados rejeitados) ou `1` (erro técnico). O contrato completo está em
+`--output-dir`, exige um manifesto de `validacao` com qualidade aprovada, o mesmo
+`dataset_id` e `schema_version` configurados, e confere novamente hashes e
+colunas das três partições antes do treinamento. Preparação direta, validação
+rejeitada e hashes ou schemas divergentes bloqueiam a criação do modelo.
+Encerra com código `0` em sucesso e `1` para dependência rejeitada, incompatibilidade
+de artefatos ou erro técnico. O código `2` é usado pela etapa de validação para
+identificar lote reprovado.
+O contrato completo está em
 [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ```powershell
@@ -305,6 +310,18 @@ uv run python src/monitoramento/validacao.py ^
   --input-manifest reports/runs/<run_id_do_produtor>/manifest.json
 ```
 
+O perfil padrão `reference` exige o alvo e valida `train`, `validation` e
+`test`. Para validar um lote de produção sem alvo, use
+`--profile production`; ele seleciona o artefato `features`, preserva as
+colunas de identificador/cenário/lote e aplica as regras às features.
+
+```powershell
+uv run python src/monitoramento/validacao.py ^
+  --config configs/validacao.json ^
+  --profile production ^
+  --input-manifest reports/runs/<run_id_da_simulacao>/manifest.json
+```
+
 | Artefato | Local |
 |---|---|
 | Relatório de qualidade | `reports/runs/<run_id>/quality.json` |
@@ -316,7 +333,9 @@ numéricas e domínios categóricos. Uma violação bloqueia o conjunto inteiro:
 relatório registra `approved`, `checked_rows` e a lista de `violations` com
 `rule_id` e `count`, sem reescrever nem descartar registros. A etapa aceita
 `--config`, `--input-manifest`, `--run-id` e `--output-dir` e encerra com código
-`0` (aprovado), `2` (dados rejeitados) ou `1` (erro técnico). O contrato completo
+`0` (aprovado), `2` (dados rejeitados) ou `1` (erro técnico). Valores nulos
+seguem a regra de obrigatoriedade de cada campo; texto presente que não possa
+ser convertido em número falha nas regras de faixa e domínio numérico. O contrato completo
 está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 A execução real sobre o manifesto da preparação aprovou 90.000 linhas

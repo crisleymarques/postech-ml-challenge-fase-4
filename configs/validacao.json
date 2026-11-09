@@ -1,6 +1,7 @@
 {
   "contract_version": "1.0",
   "stage": "validacao",
+  "profile": "reference",
   "dataset_id": "lending_club_100k",
   "schema_version": "1.0",
   "artifacts": ["train", "validation", "test"],

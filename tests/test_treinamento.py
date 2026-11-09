@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from monitoramento import treinamento as treino
+from monitoramento import validacao as val
 
 PARTICOES = ("train", "validation", "test")
 
@@ -19,6 +20,7 @@ def montar_config(tmp_path: Path) -> dict:
         "contract_version": "1.0",
         "stage": "treinamento",
         "dataset_id": "teste",
+        "schema_version": "1.0",
         "model_id": "baseline-teste",
         "seed": 42,
         "target": {
@@ -100,25 +102,83 @@ def escrever_manifesto(tmp_path: Path, config: dict) -> Path:
 
     manifesto = {
         "contract_version": "1.0",
-        "run_id": "prep-run-1",
-        "stage": "preparacao",
+        "run_id": "validacao-run-1",
+        "stage": "validacao",
         "status": "success",
         "started_at": "2026-01-01T00:00:00.000000Z",
         "finished_at": "2026-01-01T00:00:01.000000Z",
-        "config_path": "configs/preparacao.json",
-        "inputs": [],
-        "outputs": artefatos,
+        "config_path": "configs/validacao.json",
+        "inputs": artefatos,
+        "outputs": [],
         "dataset_id": config["dataset_id"],
-        "schema_version": None,
+        "schema_version": config["schema_version"],
         "model_id": None,
         "reference_id": None,
         "scenario_id": None,
         "batch_id": None,
         "error_code": None,
+        "quality": {
+            "dataset_id": config["dataset_id"],
+            "schema_version": config["schema_version"],
+            "approved": True,
+            "checked_rows": sum(item["row_count"] for item in artefatos),
+            "violations": [],
+            "artifacts": [
+                {
+                    "artifact_type": item["artifact_type"],
+                    "sha256": item["sha256"],
+                    "approved": True,
+                }
+                for item in artefatos
+            ],
+        },
     }
     caminho = tmp_path / "manifest_prep.json"
     caminho.write_text(json.dumps(manifesto), encoding="utf-8")
     return caminho
+
+
+def config_validacao(config: dict) -> dict:
+    return {
+        "contract_version": "1.0",
+        "stage": "validacao",
+        "dataset_id": config["dataset_id"],
+        "schema_version": config["schema_version"],
+        "artifacts": list(PARTICOES),
+        "rules": {
+            "identifier": {"column": "record_id", "pattern": "^[A-Z]{2}[0-9]{6}$"},
+            "target": {"column": "loan_status", "domain": [0, 1]},
+            "not_null": ["record_id", "loan_amnt", "term", "loan_status"],
+            "unique": ["record_id"],
+            "ranges": {"loan_amnt": [500, 40000]},
+            "categories": {"term": ["36 months", "60 months"]},
+        },
+    }
+
+
+def validar_preparacao(tmp_path: Path, config: dict) -> tuple[int, dict]:
+    manifesto_prep = json.loads(escrever_manifesto(tmp_path, config).read_text(encoding="utf-8"))
+    manifesto_prep.update(
+        {
+            "run_id": "prep-run-1",
+            "stage": "preparacao",
+            "config_path": "configs/preparacao.json",
+            "inputs": [],
+            "outputs": manifesto_prep["inputs"],
+            "schema_version": None,
+        }
+    )
+    manifesto_prep.pop("quality")
+    output_dir = tmp_path / "runs" / "validacao"
+    output_dir.mkdir(parents=True)
+    codigo = val.processar(
+        Path("configs/validacao.json"),
+        config_validacao(config),
+        manifesto_prep,
+        "validacao-run-1",
+        output_dir,
+    )
+    return codigo, json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
 
 
 def test_selecionar_features_rejeita_alvo() -> None:
@@ -192,7 +252,7 @@ def test_resolver_particoes_detecta_hash_divergente(tmp_path: Path) -> None:
     config = montar_config(tmp_path)
     escrever_particoes(tmp_path)
     manifesto = json.loads(escrever_manifesto(tmp_path, config).read_text(encoding="utf-8"))
-    manifesto["outputs"][0]["sha256"] = "0" * 64
+    manifesto["inputs"][0]["sha256"] = "0" * 64
 
     with pytest.raises(treino.ErroArtefato):
         treino.resolver_particoes(manifesto)
@@ -272,3 +332,91 @@ def test_processar_falha_com_dataset_incompativel(tmp_path: Path) -> None:
     saida = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     assert saida["status"] == "failed"
     assert saida["error_code"] == "ARTEFATO_INCOMPATIVEL"
+
+
+def test_fluxo_preparacao_validacao_treinamento_aprovado(tmp_path: Path) -> None:
+    config = montar_config(tmp_path)
+    escrever_particoes(tmp_path)
+    codigo_validacao, manifesto_validacao = validar_preparacao(tmp_path, config)
+    assert codigo_validacao == val.CODIGO_SUCESSO
+
+    output_dir = tmp_path / "runs" / "treinamento"
+    output_dir.mkdir()
+    codigo = treino.processar(
+        Path("configs/treinamento.json"), config, manifesto_validacao, "treino-ok", output_dir
+    )
+
+    assert codigo == treino.CODIGO_SUCESSO
+    manifesto_treino = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    metadados = json.loads(
+        (Path(config["outputs"]["models_dir"]) / manifesto_treino["model_id"] / "metadata.json")
+        .read_text(encoding="utf-8")
+    )
+    assert metadados["schema_version"] == config["schema_version"]
+    assert metadados["quality_validation_run_id"] == "validacao-run-1"
+
+
+def test_fluxo_validacao_rejeitada_bloqueia_treinamento(tmp_path: Path) -> None:
+    config = montar_config(tmp_path)
+    particoes = escrever_particoes(tmp_path)
+    particoes["train"].loc[0, "loan_amnt"] = "not-a-number"
+    particoes["train"].to_csv(
+        tmp_path / "reference" / "prep-teste" / "train.csv", index=False, encoding="utf-8"
+    )
+    codigo_validacao, manifesto_validacao = validar_preparacao(tmp_path, config)
+    assert codigo_validacao == val.CODIGO_REJEICAO
+
+    output_dir = tmp_path / "runs" / "treinamento-rejeitado"
+    output_dir.mkdir()
+    codigo = treino.processar(
+        Path("configs/treinamento.json"),
+        config,
+        manifesto_validacao,
+        "treino-rejeitado",
+        output_dir,
+    )
+
+    assert codigo == treino.CODIGO_ERRO
+    assert not list(Path(config["outputs"]["models_dir"]).glob("*"))
+
+
+@pytest.mark.parametrize(
+    "alterar",
+    [
+        "preparacao_direta",
+        "rejected",
+        "hash",
+        "schema_version",
+        "contract_version",
+        "effective_schema",
+    ],
+)
+def test_barreira_bloqueia_manifiestos_sem_aprovacao_vinculada(
+    tmp_path: Path, alterar: str
+) -> None:
+    config = montar_config(tmp_path)
+    escrever_particoes(tmp_path)
+    manifesto = json.loads(escrever_manifesto(tmp_path, config).read_text(encoding="utf-8"))
+    if alterar == "preparacao_direta":
+        manifesto["stage"] = "preparacao"
+    elif alterar == "rejected":
+        manifesto["status"] = "rejected"
+        manifesto["quality"]["approved"] = False
+    elif alterar == "hash":
+        caminho = Path(manifesto["inputs"][0]["path"])
+        caminho.write_bytes(caminho.read_bytes() + b"\n")
+    elif alterar == "schema_version":
+        manifesto["schema_version"] = "2.0"
+    elif alterar == "contract_version":
+        manifesto["contract_version"] = "2.0"
+    else:
+        manifesto["inputs"][0]["columns"].remove("record_id")
+    output_dir = tmp_path / "runs" / f"invalid-{alterar}"
+    output_dir.mkdir(parents=True)
+
+    codigo = treino.processar(
+        Path("configs/treinamento.json"), config, manifesto, "treino-bloqueado", output_dir
+    )
+
+    assert codigo == treino.CODIGO_ERRO
+    assert not list(Path(config["outputs"]["models_dir"]).glob("*"))

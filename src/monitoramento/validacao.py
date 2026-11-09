@@ -88,6 +88,14 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
     if not config["schema_version"]:
         raise ValueError("schema_version obrigatorio para a validacao de dados.")
 
+    perfil = config.get("profile", "reference")
+    if perfil not in ("reference", "production"):
+        raise ValueError("profile deve ser 'reference' ou 'production'.")
+    config["profile"] = perfil
+    config["artifacts"] = ["features"] if perfil == "production" else config.get(
+        "artifacts", ["train", "validation", "test"]
+    )
+
     regras = config["rules"]
     ausentes = [chave for chave in CHAVES_REGRAS if chave not in regras]
     if ausentes:
@@ -161,15 +169,17 @@ def _formato(serie: pd.Series, padrao: str) -> pd.Series:
 
 
 def _faixa(serie: pd.Series, minimo: float, maximo: float) -> pd.Series:
-    """Sinaliza numeros interpretaveis dentro da faixa; ausente nao falha."""
+    """Aceita ausencias, mas rejeita valores presentes que nao sejam numericos."""
     valores = pd.to_numeric(serie, errors="coerce")
-    return valores.isna() | valores.between(minimo, maximo)
+    ausente_original = serie.isna()
+    return (ausente_original & valores.isna()) | valores.between(minimo, maximo)
 
 
 def _dominio_numerico(serie: pd.Series, dominio: list[Any]) -> pd.Series:
-    """Sinaliza valores numericos pertencentes ao dominio esperado."""
+    """Aceita ausencias, mas rejeita valores presentes fora do dominio numerico."""
     valores = pd.to_numeric(serie, errors="coerce")
-    return valores.isna() | valores.isin(dominio)
+    ausente_original = serie.isna()
+    return (ausente_original & valores.isna()) | valores.isin(dominio)
 
 
 def _dominio_texto(serie: pd.Series, dominio: list[str]) -> pd.Series:
@@ -185,9 +195,13 @@ def _nao_duplicado(serie: pd.Series) -> pd.Series:
 def construir_contrato(config: dict[str, Any]) -> pa.DataFrameSchema:
     """Monta o contrato Pandera reutilizavel a partir da configuracao."""
     regras = config["rules"]
+    perfil = config.get("profile", "reference")
     identificador = regras["identifier"]["column"]
     alvo = regras["target"]["column"]
-    obrigatorias = set(regras["not_null"]) | {identificador, alvo}
+    exige_alvo = perfil == "reference"
+    obrigatorias = set(regras["not_null"]) | {identificador}
+    if exige_alvo:
+        obrigatorias.add(alvo)
 
     checks: dict[str, list[pa.Check]] = {}
 
@@ -198,10 +212,14 @@ def construir_contrato(config: dict[str, Any]) -> pa.DataFrameSchema:
         identificador,
         pa.Check(lambda s: _formato(s, regras["identifier"]["pattern"]), name="R_ID_FORMATO"),
     )
-    adicionar(
-        alvo,
-        pa.Check(lambda s: _dominio_numerico(s, regras["target"]["domain"]), name="R_ALVO_DOMINIO"),
-    )
+    if exige_alvo:
+        adicionar(
+            alvo,
+            pa.Check(
+                lambda s: _dominio_numerico(s, regras["target"]["domain"]),
+                name="R_ALVO_DOMINIO",
+            ),
+        )
 
     for coluna in regras["unique"]:
         adicionar(coluna, pa.Check(_nao_duplicado, name=f"R_UNICO_{coluna}"))
@@ -220,11 +238,11 @@ def construir_contrato(config: dict[str, Any]) -> pa.DataFrameSchema:
 
     colunas_declaradas = [
         identificador,
-        alvo,
+        *([alvo] if exige_alvo else []),
         *regras["unique"],
         *regras["ranges"],
         *regras["categories"],
-        *regras["not_null"],
+        *(coluna for coluna in regras["not_null"] if exige_alvo or coluna != alvo),
     ]
     colunas = {
         coluna: pa.Column(str, checks=checks.get(coluna, []), nullable=coluna not in obrigatorias)
@@ -276,6 +294,8 @@ def registrar_evento(
     evento: str,
     nivel: str,
     error_code: str | None = None,
+    scenario_id: str | None = None,
+    batch_id: str | None = None,
 ) -> None:
     """Acrescenta um evento ao contrato comum de observabilidade."""
     eventos.append(
@@ -288,8 +308,8 @@ def registrar_evento(
             "dataset_id": dataset_id,
             "model_id": None,
             "reference_id": None,
-            "scenario_id": None,
-            "batch_id": None,
+            "scenario_id": scenario_id,
+            "batch_id": batch_id,
             "error_code": error_code,
         }
     )
@@ -319,9 +339,19 @@ def montar_manifesto(
     resumo: dict[str, Any] | None = None
     if relatorio is not None:
         resumo = {
+            "dataset_id": relatorio["dataset_id"],
+            "schema_version": relatorio["schema_version"],
             "approved": relatorio["approved"],
             "checked_rows": relatorio["checked_rows"],
             "violations": relatorio["violations"],
+            "artifacts": [
+                {
+                    "artifact_type": item["artifact_type"],
+                    "sha256": item["sha256"],
+                    "approved": item["approved"],
+                }
+                for item in relatorio["artifacts"]
+            ],
         }
     return {
         "contract_version": CONTRACT_VERSION,
@@ -337,8 +367,14 @@ def montar_manifesto(
         "schema_version": config.get("schema_version"),
         "model_id": None,
         "reference_id": None,
-        "scenario_id": None,
-        "batch_id": None,
+        "scenario_id": next(
+            (item.get("scenario_id") for item in entradas if item.get("scenario_id") is not None),
+            None,
+        ),
+        "batch_id": next(
+            (item.get("batch_id") for item in entradas if item.get("batch_id") is not None),
+            None,
+        ),
         "error_code": error_code,
         "quality": resumo,
     }
@@ -427,10 +463,22 @@ def processar(
     output_dir: Path,
 ) -> int:
     """Executa a validacao completa e retorna o codigo de saida."""
+    config = dict(config)
+    perfil = config.get("profile", "reference")
+    if perfil not in ("reference", "production"):
+        raise ValueError("profile deve ser 'reference' ou 'production'.")
+    config["profile"] = perfil
+    config["artifacts"] = ["features"] if perfil == "production" else config.get(
+        "artifacts", ["train", "validation", "test"]
+    )
     iniciado = agora_iso()
     dataset_id = config.get("dataset_id", "desconhecido")
     eventos: list[dict[str, Any]] = []
-    registrar_evento(eventos, run_id, dataset_id, "started", "INFO")
+    ids_evento = {
+        "scenario_id": manifesto.get("scenario_id"),
+        "batch_id": manifesto.get("batch_id"),
+    }
+    registrar_evento(eventos, run_id, dataset_id, "started", "INFO", **ids_evento)
 
     entradas: list[dict[str, Any]] = []
     saidas: list[dict[str, Any]] = []
@@ -472,6 +520,8 @@ def processar(
                     "producer_run_id": artefato.get("producer_run_id"),
                     "row_count": artefato.get("row_count"),
                     "columns": artefato.get("columns"),
+                    "scenario_id": manifesto.get("scenario_id"),
+                    "batch_id": manifesto.get("batch_id"),
                 }
             )
 
@@ -493,7 +543,13 @@ def processar(
         saidas.append(descritor_artefato("quality_report", caminho_relatorio, run_id))
     except ErroArtefato as erro:
         registrar_evento(
-            eventos, run_id, dataset_id, "failed", "ERROR", error_code="ARTEFATO_INCOMPATIVEL"
+            eventos,
+            run_id,
+            dataset_id,
+            "failed",
+            "ERROR",
+            error_code="ARTEFATO_INCOMPATIVEL",
+            **ids_evento,
         )
         return finalizar(
             CODIGO_ERRO,
@@ -511,7 +567,15 @@ def processar(
             output_dir,
         )
     except Exception as erro:  # noqa: BLE001 - entrada invalida e erro tecnico
-        registrar_evento(eventos, run_id, dataset_id, "failed", "ERROR", error_code="ERRO_TECNICO")
+        registrar_evento(
+            eventos,
+            run_id,
+            dataset_id,
+            "failed",
+            "ERROR",
+            error_code="ERRO_TECNICO",
+            **ids_evento,
+        )
         return finalizar(
             CODIGO_ERRO,
             "failed",
@@ -530,7 +594,13 @@ def processar(
 
     if not aprovado:
         registrar_evento(
-            eventos, run_id, dataset_id, "rejected", "ERROR", error_code="QUALIDADE_REPROVADA"
+            eventos,
+            run_id,
+            dataset_id,
+            "rejected",
+            "ERROR",
+            error_code="QUALIDADE_REPROVADA",
+            **ids_evento,
         )
         return finalizar(
             CODIGO_REJEICAO,
@@ -548,7 +618,7 @@ def processar(
             output_dir,
         )
 
-    registrar_evento(eventos, run_id, dataset_id, "completed", "INFO")
+    registrar_evento(eventos, run_id, dataset_id, "completed", "INFO", **ids_evento)
     return finalizar(
         CODIGO_SUCESSO,
         "success",
@@ -578,6 +648,12 @@ def main() -> None:
     )
     parser.add_argument("--run-id", default=None, help="Identificador unico da execucao.")
     parser.add_argument("--output-dir", type=Path, default=None, help="Diretorio novo da execucao.")
+    parser.add_argument(
+        "--profile",
+        choices=("reference", "production"),
+        default=None,
+        help="Perfil do contrato; production valida features sem exigir alvo.",
+    )
     args = parser.parse_args()
 
     if len(args.input_manifest) != 1:
@@ -588,6 +664,11 @@ def main() -> None:
 
     try:
         config = carregar_config(args.config)
+        if args.profile:
+            config["profile"] = args.profile
+        config["artifacts"] = ["features"] if config["profile"] == "production" else config.get(
+            "artifacts", ["train", "validation", "test"]
+        )
         manifesto = carregar_manifesto(args.input_manifest[0])
     except Exception as erro:  # noqa: BLE001 - entrada invalida e erro tecnico
         print(f"Entrada invalida: {erro}")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -175,6 +176,156 @@ def test_validar_artefato_aprova_dados_validos(tmp_path: Path) -> None:
 
     assert linhas == 20
     assert violacoes == []
+
+
+def test_rejeita_texto_em_regras_numericas_e_aceita_nulo_opcional(tmp_path: Path) -> None:
+    config = montar_config(tmp_path)
+    config["rules"]["ranges"]["optional_numeric"] = [0, 100]
+    base = gerar_particao(2, 0)
+    base["optional_numeric"] = [None, "abc"]
+    base.loc[0, "loan_amnt"] = "abc"
+    base.loc[1, "loan_status"] = "Charged Off"
+    caminho = tmp_path / "numericos.csv"
+    base.to_csv(caminho, index=False, encoding="utf-8")
+
+    linhas, violacoes = val.validar_artefato(caminho, val.construir_contrato(config))
+
+    regras = {item["rule_id"]: item["count"] for item in violacoes}
+    assert linhas == 2
+    assert regras["R_FAIXA_loan_amnt"] == 1
+    assert regras["R_FAIXA_optional_numeric"] == 1
+    assert regras["R_ALVO_DOMINIO"] == 1
+    assert "R_NAO_NULO_optional_numeric" not in regras
+
+
+def test_perfil_producao_aprova_features_sem_alvo_e_preserva_ids(tmp_path: Path) -> None:
+    config = montar_config(tmp_path)
+    config["profile"] = "production"
+    config["artifacts"] = ["features"]
+    base = pd.DataFrame(
+        {
+            "record_id": ["LC0000001", "LC0000002"],
+            "loan_amnt": ["1000", "1500"],
+            "term": ["36 months", "60 months"],
+            "scenario_id": ["controle", "controle"],
+            "batch_id": ["lote-1", "lote-1"],
+        }
+    )
+    caminho = tmp_path / "features.csv"
+    base.to_csv(caminho, index=False, encoding="utf-8")
+
+    linhas, violacoes = val.validar_artefato(caminho, val.construir_contrato(config))
+
+    assert linhas == 2
+    assert violacoes == []
+    validado = pd.read_csv(caminho, dtype=str)
+    assert validado[["record_id", "scenario_id", "batch_id"]].equals(
+        base[["record_id", "scenario_id", "batch_id"]]
+    )
+
+    config["artifacts"] = ["features"]
+    manifesto = {
+        "contract_version": "1.0",
+        "run_id": "sim-1",
+        "stage": "simulacao",
+        "status": "success",
+        "dataset_id": config["dataset_id"],
+        "scenario_id": "controle",
+        "batch_id": "lote-1",
+        "outputs": [
+            {
+                "artifact_type": "features",
+                "path": caminho.as_posix(),
+                "sha256": val.sha256_arquivo(caminho),
+                "producer_run_id": "sim-1",
+                "row_count": len(base),
+                "columns": list(base.columns),
+            }
+        ],
+    }
+    output_dir = tmp_path / "runs" / "production"
+    output_dir.mkdir(parents=True)
+
+    codigo = val.processar(
+        Path("configs/validacao.json"), config, manifesto, "validation-production", output_dir
+    )
+
+    assert codigo == val.CODIGO_SUCESSO
+    qualidade = json.loads((output_dir / "quality.json").read_text(encoding="utf-8"))
+    assert qualidade["approved"] is True
+    assert qualidade["artifacts"][0]["artifact_type"] == "features"
+    manifesto_saida = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifesto_saida["scenario_id"] == "controle"
+    assert manifesto_saida["batch_id"] == "lote-1"
+    eventos = [
+        json.loads(linha)
+        for linha in (output_dir / "events.jsonl").read_text().splitlines()
+    ]
+    assert all(evento["scenario_id"] == "controle" for evento in eventos)
+    assert all(evento["batch_id"] == "lote-1" for evento in eventos)
+
+
+def test_cli_aplica_perfil_producao_e_seleciona_features(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = montar_config(tmp_path)
+    caminho_config = escrever_config(tmp_path, config)
+    caminho_dados = tmp_path / "features.csv"
+    pd.DataFrame(
+        {
+            "record_id": ["LC0000001"],
+            "loan_amnt": ["1000"],
+            "term": ["36 months"],
+            "scenario_id": ["controle"],
+            "batch_id": ["lote-cli"],
+        }
+    ).to_csv(caminho_dados, index=False)
+    caminho_manifesto = tmp_path / "simulacao.json"
+    caminho_manifesto.write_text(
+        json.dumps(
+            {
+                "contract_version": "1.0",
+                "run_id": "sim-cli",
+                "stage": "simulacao",
+                "status": "success",
+                "dataset_id": config["dataset_id"],
+                "outputs": [
+                    {
+                        "artifact_type": "features",
+                        "path": caminho_dados.as_posix(),
+                        "sha256": val.sha256_arquivo(caminho_dados),
+                        "producer_run_id": "sim-cli",
+                        "row_count": 1,
+                        "columns": list(pd.read_csv(caminho_dados, nrows=0).columns),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "runs" / "cli-production"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "validacao.py",
+            "--config",
+            str(caminho_config),
+            "--profile",
+            "production",
+            "--input-manifest",
+            str(caminho_manifesto),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as saida:
+        val.main()
+
+    assert saida.value.code == val.CODIGO_SUCESSO
+    qualidade = json.loads((output_dir / "quality.json").read_text(encoding="utf-8"))
+    assert [item["artifact_type"] for item in qualidade["artifacts"]] == ["features"]
 
 
 def test_validar_artefato_rejeita_anomalias(tmp_path: Path) -> None:
