@@ -97,10 +97,9 @@ Durante o setup, foram verificadas a consistência das dependências,
 as importações das bibliotecas e a disponibilidade de Ruff e pytest.
 A análise estática também passou.
 
-As verificações anteriores cobriram a configuração e os testes isolados então
-disponíveis. O fluxo sintético preparação → validação → treinamento está
-coberto pelos testes atuais; simulação de lotes, detecção de drift e dashboard
-permanecem pendentes.
+Essas verificações não validam o pipeline completo. As etapas de obtenção,
+preparação, treinamento, validação, simulação, predição e detecção de drift
+possuem testes isolados descritos abaixo; o dashboard permanece pendente.
 
 ## Arquitetura e contratos
 
@@ -121,10 +120,11 @@ estados de execução e artefatos produzidos por etapa. Dados de treino,
 validação e teste ficam separados da base e dos lotes de produção simulada;
 a referência de drift é congelada a partir das features de treino.
 
-Obtenção/amostragem, preparação, validação Pandera e treinamento baseline estão
-implementados. Simulação de lotes, predição, detecção de drift e dashboard
-continuam planejados. As métricas históricas desta documentação não foram
-reexecutadas como parte das correções do PR #32.
+Os scripts de obtenção/amostragem do dataset e de preparação e separação das
+partições estão implementados, assim como o contrato Pandera, o treinamento, a
+simulação, a predição e a detecção de drift. O dashboard ainda não está
+implementado. A documentação de arquitetura
+não substitui as evidências funcionais nem a governança exigidas na entrega.
 
 ## Dataset — PREP-02
 
@@ -521,6 +521,55 @@ e score médio de 0,533.
 uv run pytest tests/predicao -q
 ```
 
+## Detecção de Data Drift — F2-03
+
+O componente [src/monitoramento/deteccao.py](src/monitoramento/deteccao.py)
+compara a distribuição da referência congelada (features de treino) com a do
+lote de produção simulado, usando o `DataDriftPreset` do Evidently descrito em
+[configs/deteccao.json](configs/deteccao.json). A etapa recebe dois manifestos
+de entrada (treinamento e simulação), confere os hashes dos artefatos e valida
+que ambos pertencem ao mesmo `dataset_id`, reutilizando o contrato comum das
+etapas anteriores. A referência é lida a partir dos metadados do modelo
+(numéricas e categóricas) para aplicar os tipos corretos antes da comparação.
+
+```powershell
+uv run python src/monitoramento/deteccao.py ^
+  --config configs/deteccao.json ^
+  --input-manifest reports/runs/<run_treinamento>/manifest.json ^
+  --input-manifest reports/runs/<run_simulacao>/manifest.json ^
+  --run-id run-f203-deteccao
+```
+
+| Artefato | Local |
+|---|---|
+| Resultado por variável | `reports/runs/<run_id>/drift.json` |
+| Relatório HTML do Evidently | `reports/runs/<run_id>/drift.html` |
+| Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
+
+Cada variável registra `feature`, `method`, `statistic`, `threshold` e
+`drift_detected`. O Evidently escolhe o teste por tipo de coluna — distância de
+Wasserstein para numéricas e distância de Jensen-Shannon para categóricas — e a
+regra de decisão usa dois limiares declarados na configuração: `p_value_threshold`
+para métodos de p-valor (drift quando a estatística fica abaixo) e
+`distance_threshold` para métodos de distância (drift quando a estatística fica
+acima), de modo que o limiar aplicado por variável fica explícito no resultado.
+Variáveis não avaliáveis registram o motivo e `drift_detected` nulo, sem
+converter ausência de evidência em ausência de drift. Um alerta de drift **não**
+é erro: a execução termina em `success` e emite o evento `drift_alert` com nível
+`WARNING`. A etapa aceita `--config`, `--input-manifest`, `--run-id` e
+`--output-dir` e encerra com código `0` (sucesso) ou `1` (erro técnico ou
+incompatibilidade de artefatos).
+
+Na execução real sobre o cenário `data-drift` / lote `batch-f201`, 13 de 22
+variáveis foram classificadas com drift (proporção de 0,5909, acima do critério
+de conjunto de 0,5), incluindo as cinco alteradas pela simulação
+(`annual_inc`, `dti`, `fico_range_low`, `fico_range_high` e `revol_util`), e o
+evento `drift_alert` foi registrado.
+
+```powershell
+uv run pytest tests/test_deteccao.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -580,6 +629,11 @@ Concluídos:
   baseline e o lote da simulação, com pré-processamento consistente com o
   treinamento, `predictions.csv` em `data/analysis/` e testes em
   `tests/predicao`.
+- Detecção de Data Drift com Evidently (F2-03), comparando a referência
+  congelada com o lote de produção simulado, com regra de decisão por dois
+  limiares, resultado por variável, relatório `drift.json`/`drift.html`, evento
+  `drift_alert` sem converter alerta em erro e testes em
+  `tests/test_deteccao.py`.
 
 Pendentes:
 
@@ -592,4 +646,4 @@ Pendentes:
 - Validação funcional integrada do pipeline com dados sintéticos, além dos
   testes isolados de obtenção, de preparação do dataset, de treinamento e de
   validação.
-- Implementação das etapas restantes do pipeline (detecção, dashboard).
+- Implementação das etapas restantes do pipeline (dashboard).
