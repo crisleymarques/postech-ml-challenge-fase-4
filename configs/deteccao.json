@@ -1,0 +1,21 @@
+{
+  "contract_version": "1.0",
+  "stage": "deteccao",
+  "dataset_id": "lending_club_100k",
+  "identifier": "record_id",
+  "reference": {
+    "producer_stage": "treinamento",
+    "features_artifact": "reference_features",
+    "metadata_artifact": "model_metadata"
+  },
+  "batch": {
+    "producer_stage": "simulacao",
+    "features_artifact": "features"
+  },
+  "method": {
+    "name": "evidently",
+    "preset": "DataDriftPreset",
+    "p_value_threshold": 0.05,
+    "distance_threshold": 0.1
+  }
+}
