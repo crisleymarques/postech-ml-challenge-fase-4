@@ -25,6 +25,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Permite executar o arquivo diretamente na raiz do repositório, como no README.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -41,6 +44,8 @@ from sklearn.metrics import (
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
+
+from monitoramento.preprocessamento import converter_categoricas, converter_numericas
 
 CONTRACT_VERSION = "1.0"
 STAGE = "treinamento"
@@ -164,16 +169,6 @@ def ler_particao(caminho: Path) -> pd.DataFrame:
     return base.replace("", np.nan)
 
 
-def converter_numericas(tabela: Any) -> Any:
-    """Converte valores textuais em numericos; vazios ou invalidos viram ausentes."""
-    return pd.DataFrame(tabela).apply(pd.to_numeric, errors="coerce").to_numpy()
-
-
-def converter_categoricas(tabela: Any) -> Any:
-    """Trata campo vazio como ausencia antes da imputacao categorica."""
-    return pd.DataFrame(tabela).replace("", np.nan).to_numpy()
-
-
 def selecionar_features(config: dict[str, Any], base: pd.DataFrame) -> tuple[list[str], list[str]]:
     """Valida e devolve as colunas numericas e categoricas do modelo."""
     especificacao = config["features"]
@@ -206,11 +201,15 @@ def alvo_numerico(base: pd.DataFrame, config: dict[str, Any]) -> pd.Series:
     if coluna not in base.columns:
         raise ErroArtefato(f"Coluna alvo ausente: {coluna}")
 
-    valores = pd.to_numeric(base[coluna], errors="raise").astype(int)
-    esperados = {
-        int(config["target"]["positive_value"]),
-        int(config["target"]["negative_value"]),
-    }
+    valores_originais = pd.to_numeric(base[coluna], errors="raise")
+    if valores_originais.isna().any() or not np.isfinite(valores_originais.to_numpy()).all():
+        raise ErroArtefato("Rotulos de alvo ausentes ou nao finitos.")
+    if not np.equal(valores_originais, np.floor(valores_originais)).all():
+        raise ErroArtefato("Rotulos de alvo devem ser inteiros; truncamento nao e permitido.")
+    if (config["target"]["positive_value"], config["target"]["negative_value"]) != (1, 0):
+        raise ValueError("O treinamento suporta positive_value=1 e negative_value=0.")
+    esperados = {0, 1}
+    valores = valores_originais.astype(int)
     inesperados = sorted(set(valores.unique()) - esperados)
     if inesperados:
         raise ErroArtefato(f"Rotulos de alvo inesperados: {inesperados}")
@@ -359,7 +358,7 @@ def persistir_modelo(
     """Grava pipeline, metadados e avaliacao e devolve os artefatos gerados."""
     features = numericas + categoricas
     diretorio = Path(config["outputs"]["models_dir"]) / model_id
-    diretorio.mkdir(parents=True, exist_ok=True)
+    diretorio.mkdir(parents=True, exist_ok=False)
 
     joblib.dump(modelo, diretorio / "pipeline.pkl")
 
@@ -440,7 +439,7 @@ def persistir_referencia(
         raise ErroArtefato(f"Identificador ausente na particao de treino: {identificador}")
 
     diretorio = Path(config["outputs"]["reference_dir"]) / reference_id
-    diretorio.mkdir(parents=True, exist_ok=True)
+    diretorio.mkdir(parents=True, exist_ok=False)
     conteudo = particao_treino[[identificador, *features]]
     caminho = diretorio / "features.csv"
     conteudo.to_csv(caminho, index=False, encoding="utf-8")
@@ -558,8 +557,22 @@ def processar(
         assinatura = calcular_assinatura(
             config, numericas, categoricas, artefatos["train"]["sha256"]
         )
-        model_id = f"{config['model_id']}-{assinatura[:8]}"
-        reference_id = f"ref-{assinatura[:8]}"
+        # Cada execução publica artefatos imutáveis, mesmo quando os dados e a
+        # configuração são idênticos. O sufixo também evita reuso da avaliação
+        # quando apenas validação/teste mudam.
+        sufixo_execucao = hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:8]
+        model_id = f"{config['model_id']}-{assinatura[:8]}-{sufixo_execucao}"
+        reference_id = f"ref-{assinatura[:8]}-{sufixo_execucao}"
+
+        diretorio_modelo = Path(config["outputs"]["models_dir"]) / model_id
+        diretorio_referencia = Path(config["outputs"]["reference_dir"]) / reference_id
+        conflitos = [
+            caminho.as_posix()
+            for caminho in (diretorio_modelo, diretorio_referencia)
+            if caminho.exists()
+        ]
+        if conflitos:
+            raise ErroArtefato(f"Destinos imutaveis ja existem: {conflitos}")
 
         modelo = construir_pipeline(numericas, categoricas, config)
         modelo.fit(particoes["train"][features], alvo_numerico(particoes["train"], config))
