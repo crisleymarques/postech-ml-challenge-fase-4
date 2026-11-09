@@ -381,6 +381,48 @@ Resultado real da demonstração (lote de 600 linhas, 601 após a duplicata):
 uv run pytest tests/test_lote_invalido.py -q
 ```
 
+## Simulação temporal de Data Drift — F2-01
+
+O componente
+[src/monitoramento/simulacao_drift.py](src/monitoramento/simulacao_drift.py)
+gera um conjunto de produção distinto da referência: parte da base reservada
+para produção simulada, avança o período de emissão (`issue_d`) para
+representar a passagem do tempo e aplica mudanças econômicas deterministas que
+alteram a distribuição de cinco features importantes do modelo. A referência
+original não é reescrita; cada execução grava um conjunto novo e publica o
+manifesto do produtor (`stage: simulacao`) com o período, as variáveis
+alteradas, as transformações e os parâmetros efetivos.
+
+```powershell
+uv run python src/monitoramento/simulacao_drift.py ^
+  --config configs/simulacao.json ^
+  --batch-id batch-f201
+```
+
+| Variável | Operação | Parâmetro | Efeito | Média antes → depois |
+|---|---|---|---|---|
+| `annual_inc` | escala | 0,80 | renda cai (recessão) | 78.694,91 → 62.970,37 |
+| `revol_util` | escala | 1,35 | utilização do crédito sobe | 41,97 → 56,67 |
+| `dti` | deslocamento | +6,0 | comprometimento da renda sobe | 18,67 → 24,62 |
+| `fico_range_low` | deslocamento | −25,0 | score cai | 704,70 → 679,69 |
+| `fico_range_high` | deslocamento | −25,0 | score cai | 708,70 → 683,70 |
+
+Cada linha recebe ainda uma variação relativa de até 5% (`jitter`), derivada
+da semente fixa, para representar diferenças individuais sem comprometer a
+reprodutibilidade. As features são gravadas em `features.csv` e os rótulos em
+arquivo separado (`labels.csv`), conforme o contrato da etapa de simulação.
+
+As saídas ficam em `data/analysis/<scenario_id>/<batch_id>/` e o manifesto em
+`reports/runs/<run_id>/`, ambos ignorados pelo Git. Na execução real, o período
+da base passou de `Jul-2017..Dec-2018` para `Jul-2019..Dec-2020` (deslocamento
+de 24 meses), com 10.000 linhas e `record_id` preservado e único. Os valores
+permanecem dentro das faixas do contrato de qualidade, de modo que o cenário
+chega à detecção de drift sem ser reprovado por qualidade.
+
+```powershell
+uv run pytest tests/test_simulacao_drift.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -430,14 +472,18 @@ Concluídos:
 - Demonstração do bloqueio de ingestão de dados inválidos (F1-04), com geração
   de lote com anomalias intencionais, reprovação pelo contrato
   (`QUALIDADE_REPROVADA`) e testes em `tests/test_lote_invalido.py`.
+- Simulação temporal de Data Drift (F2-01), com avanço do período e alteração
+  intencional da distribuição de cinco features importantes, `features.csv`,
+  rótulos em arquivo separado, manifesto com período e parâmetros, e testes em
+  `tests/test_simulacao_drift.py`.
 
 Pendentes:
 
 - Confirmação da licença de uso do dataset.
 - Fixação da versão remota do dataset e revisão das estatísticas anteriores
   para a amostra atual, conforme ressalvas em docs/DATASET.md.
-- Definição dos cenários de drift da produção simulada.
+- Definição dos demais cenários da produção simulada (controle e concept drift).
 - Validação funcional integrada do pipeline com dados sintéticos, além dos
   testes isolados de obtenção, de preparação do dataset, de treinamento e de
   validação.
-- Implementação das etapas restantes do pipeline (simulação, detecção, dashboard).
+- Implementação das etapas restantes do pipeline (predição, detecção, dashboard).
