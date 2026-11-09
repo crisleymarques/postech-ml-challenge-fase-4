@@ -99,6 +99,24 @@ def test_binarizar_alvo_rejeita_rotulo_desconhecido() -> None:
         prep.binarizar_alvo(base, montar_config(Path("."), Path("origem.csv"))["target"])
 
 
+@pytest.mark.parametrize(
+    "altera",
+    [
+        {"positive_value": 0, "negative_value": 0},
+        {"positive_value": 2},
+        {"positive_value": True},
+        {"positive_class": "Fully Paid"},
+        {"positive_class": ""},
+    ],
+)
+def test_binarizar_alvo_rejeita_mapeamento_invalido(altera: dict) -> None:
+    target = montar_config(Path("."), Path("origem.csv"))["target"]
+    target.update(altera)
+    base = pd.DataFrame({"loan_status": ["Fully Paid", "Charged Off"]})
+    with pytest.raises((prep.RejeicaoDados, ValueError)):
+        prep.binarizar_alvo(base, target)
+
+
 def test_separar_temporal_disjunto_e_ordenado() -> None:
     base = pd.DataFrame(origem_sintetica())
     cotas = prep.calcular_cotas(len(base), PROPORCOES)
@@ -120,6 +138,7 @@ def test_processar_sucesso_gera_particoes_e_manifesto(tmp_path: Path) -> None:
     origem = tmp_path / "origem.csv"
     gravar_origem(origem, origem_sintetica())
     config = montar_config(tmp_path, origem)
+    config["preparation_id"] = "prep-v1"
     config_path = tmp_path / "preparacao.json"
     config_path.write_text(json.dumps(config), encoding="utf-8")
 
@@ -132,9 +151,12 @@ def test_processar_sucesso_gera_particoes_e_manifesto(tmp_path: Path) -> None:
     manifesto = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifesto["status"] == "success"
     assert manifesto["stage"] == "preparacao"
+    assert manifesto["run_id"] == "run-1"
+    assert manifesto["preparation_id"] == "prep-v1"
     assert len(manifesto["outputs"]) == 4
     assert sum(item["row_count"] for item in manifesto["outputs"]) == 10
     for artefato in manifesto["outputs"]:
+        assert artefato["producer_run_id"] == "run-1"
         assert Path(artefato["path"]).is_file()
         assert artefato["sha256"]
     assert (output_dir / "events.jsonl").is_file()
@@ -161,6 +183,106 @@ def test_processar_rejeita_origem_invalida(tmp_path: Path) -> None:
     assert manifesto["error_code"] == "REJEICAO_DADOS"
 
 
+@pytest.mark.parametrize("linhas", [[], origem_sintetica()[:3]])
+def test_processar_rejeita_origem_vazia_ou_com_cotas_vazias(
+    tmp_path: Path, linhas: list[dict]
+) -> None:
+    origem = tmp_path / "origem.csv"
+    if linhas:
+        gravar_origem(origem, linhas)
+    else:
+        origem.write_text("record_id,issue_d,loan_status,loan_amnt\n", encoding="utf-8")
+    config = montar_config(tmp_path, origem)
+    output_dir = tmp_path / "runs" / "run-small"
+    output_dir.mkdir(parents=True)
+
+    codigo = prep.processar(tmp_path / "cfg.json", config, "run-small", output_dir)
+
+    assert codigo == prep.CODIGO_REJEICAO
+    assert json.loads((output_dir / "manifest.json").read_text())["status"] == "rejected"
+    assert not (tmp_path / "reference").exists()
+    assert not (tmp_path / "analysis").exists()
+
+
+@pytest.mark.parametrize(
+    ("alteracao", "caminho"),
+    [
+        ("source_path", "source.path"),
+        ("seed", "split.seed"),
+        ("target_value", "target.positive_value"),
+        ("output", "outputs.analysis_dir"),
+    ],
+)
+def test_carregar_config_rejeita_configuracao_incompleta_antes_da_execucao(
+    tmp_path: Path, alteracao: str, caminho: str
+) -> None:
+    config = montar_config(tmp_path, tmp_path / "origem.csv")
+    if alteracao == "source_path":
+        del config["source"]["path"]
+    elif alteracao == "seed":
+        del config["split"]["seed"]
+    elif alteracao == "target_value":
+        config["target"]["positive_value"] = 1.0
+    else:
+        config["outputs"]["analysis_dir"] = config["outputs"]["reference_dir"]
+    config_path = tmp_path / "invalid.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises((ValueError, TypeError)):
+        prep.carregar_config(config_path)
+    assert not (tmp_path / "reference").exists()
+    assert not (tmp_path / "analysis").exists()
+
+
+@pytest.mark.parametrize("campo", ["source.path", "split.seed"])
+def test_cli_configuracao_invalida_encerra_sem_run_dir_ou_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], campo: str
+) -> None:
+    config = montar_config(tmp_path, tmp_path / "origem.csv")
+    if campo == "source.path":
+        del config["source"]["path"]
+    else:
+        del config["split"]["seed"]
+    config_path = tmp_path / "invalid.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    run_dir = tmp_path / "runs" / "invalid-run"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "preparacao.py",
+            "--config",
+            str(config_path),
+            "--run-id",
+            "invalid-run",
+            "--output-dir",
+            str(run_dir),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as saida:
+        prep.main()
+
+    assert saida.value.code == prep.CODIGO_ERRO
+    assert "Traceback" not in capsys.readouterr().out
+    assert not run_dir.exists()
+    assert not (tmp_path / "reference").exists()
+
+
+def test_processar_erro_tecnico_de_origem_persiste_manifesto_terminal(tmp_path: Path) -> None:
+    config = montar_config(tmp_path, tmp_path / "inexistente.csv")
+    output_dir = tmp_path / "runs" / "run-read-error"
+    output_dir.mkdir(parents=True)
+
+    codigo = prep.processar(tmp_path / "cfg.json", config, "run-read-error", output_dir)
+
+    assert codigo == prep.CODIGO_ERRO
+    manifesto = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    eventos = (output_dir / "events.jsonl").read_text(encoding="utf-8")
+    assert manifesto["status"] == "failed"
+    assert manifesto["error_code"] == "ERRO_TECNICO"
+    assert '"event": "failed"' in eventos
+
+
 def test_escrever_particoes_nao_sobrescreve(tmp_path: Path) -> None:
     origem = tmp_path / "origem.csv"
     gravar_origem(origem, origem_sintetica())
@@ -169,6 +291,7 @@ def test_escrever_particoes_nao_sobrescreve(tmp_path: Path) -> None:
     cotas = prep.calcular_cotas(len(base), PROPORCOES)
     particoes = prep.separar_temporal(base, "issue_d", "%b-%Y", cotas)
 
-    prep.escrever_particoes(particoes, config, "prep-1")
+    prep.escrever_particoes(particoes, config, "prep-1", "run-1")
     with pytest.raises(ValueError):
-        prep.escrever_particoes(particoes, config, "prep-1")
+        prep.escrever_particoes(particoes, config, "prep-1", "run-1")
+

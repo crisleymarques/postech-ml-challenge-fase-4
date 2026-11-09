@@ -296,3 +296,8 @@ A validação funcional do pipeline deverá demonstrar aprovação de dados
 válidos, rejeição do lote inválido, isolamento das partições, alinhamento
 de predições, reprodução dos cenários,
 relatório de drift e exibição de sucesso, bloqueio e falha no dashboard.
+
+
+### Configuracao invalida e inicio da execucao
+
+A configuracao e validada antes da criacao do diretorio de uma execucao. Se for invalida, o comando termina com codigo 1 e mensagem controlada; como a execucao ainda nao iniciou, nao cria `run_id`, eventos nem manifesto. Depois que o diretorio da execucao e criado, falhas tecnicas ao ler ou preparar a origem sao registradas em eventos e manifesto terminal sempre que a persistencia estiver disponivel.
