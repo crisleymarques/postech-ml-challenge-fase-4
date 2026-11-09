@@ -570,6 +570,54 @@ evento `drift_alert` foi registrado.
 uv run pytest tests/drift/deteccao -q
 ```
 
+## Análise estatística e interpretação do drift — F2-04
+
+O componente [src/monitoramento/analise_drift.py](src/monitoramento/analise_drift.py)
+complementa a detecção com testes estatísticos próprios e interpretação técnica,
+descritos em [configs/analise_drift.json](configs/analise_drift.json). Para cada
+variável o módulo calcula o **PSI** (Population Stability Index) e, no caso das
+numéricas, o teste de **Kolmogorov-Smirnov** da SciPy. As amostras vêm dos mesmos
+dois manifestos usados na detecção: a referência (features de treino) e o lote
+simulado de produção, com verificação de hash e de `dataset_id`.
+
+```powershell
+uv run python src/monitoramento/analise_drift.py ^
+  --config configs/analise_drift.json ^
+  --input-manifest reports/runs/<run_treinamento>/manifest.json ^
+  --input-manifest reports/runs/<run_simulacao>/manifest.json ^
+  --run-id run-f204-analise
+```
+
+| Artefato | Local |
+|---|---|
+| Resultado por variável e interpretação | `reports/runs/<run_id>/analise.json` |
+| Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
+
+Cada variável registra `psi`, `psi_band` (insignificante, moderada ou
+significativa), `ks_statistic`, `ks_p_value`, `drift_detected` e `reasons`. A
+regra de decisão combina os dois testes: há mudança quando o PSI atinge
+`psi_threshold` **ou** quando o p-valor do K-S fica abaixo de
+`ks_p_value_threshold` e a estatística atinge `ks_statistic_threshold`. O
+documento cruza as variáveis alteradas intencionalmente na simulação
+(`changed_variables.configured`) com as confirmadas pelos testes
+(`confirmed`/`not_confirmed`) e registra conclusões técnicas sem inferir
+causalidade. Como na detecção, um alerta **não** é erro: a execução termina em
+`success` e emite `drift_alert` com nível `WARNING`. A etapa aceita `--config`,
+`--input-manifest`, `--run-id` e `--output-dir` e encerra com código `0`
+(sucesso) ou `1` (erro técnico ou incompatibilidade de artefatos).
+
+Na execução real sobre o cenário `data-drift` / lote `batch-f201`, 8 de 22
+variáveis foram classificadas com mudança (proporção de 0,3636, PSI máximo de
+0,7195), e as cinco variáveis alteradas pela simulação (`annual_inc`, `dti`,
+`fico_range_low`, `fico_range_high` e `revol_util`) foram confirmadas. O
+documento também registra a ressalva de que referência e lote provêm de períodos
+distintos, de modo que parte das diferenças pode refletir a separação temporal e
+não apenas a alteração injetada.
+
+```powershell
+uv run pytest tests/test_analise_drift.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -634,6 +682,10 @@ Concluídos:
   limiares, resultado por variável, relatório `drift.json`/`drift.html`, evento
   `drift_alert` sem converter alerta em erro e testes em
   `tests/drift/deteccao`.
+- Análise estatística e interpretação do drift (F2-04), com PSI e teste de
+  Kolmogorov-Smirnov por variável, cruzamento com as variáveis alteradas pela
+  simulação, conclusões técnicas em `analise.json` e testes em
+  `tests/test_analise_drift.py`.
 
 Pendentes:
 

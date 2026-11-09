@@ -75,6 +75,7 @@ flowchart TD
 | `simulacao/data_drift/` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
 | Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
 | Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
+| `analise_drift.py` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
 | Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -146,7 +147,7 @@ Cada etapa produz `reports/runs/<run_id>/manifest.json`. Campos obrigatórios:
 | --- | --- |
 | `contract_version` | String; versão inicial `1.0` para a estrutura das interfaces |
 | `run_id` | String; identificador da execução da etapa |
-| `stage` | Enum: `preparacao`, `validacao`, `treinamento`, `simulacao`, `predicao`, `deteccao` |
+| `stage` | Enum: `preparacao`, `validacao`, `treinamento`, `simulacao`, `predicao`, `deteccao`, `analise` |
 | `status` | Enum terminal: `success`, `rejected`, `failed`, `skipped` |
 | `started_at`, `finished_at` | Strings ISO 8601 UTC |
 | `config_path` | String; configuração efetivamente utilizada |
@@ -226,6 +227,7 @@ disponíveis para execução agora.
 | Simulação | Features CSV; manifesto com `scenario_id`, `batch_id`, período, base de origem, seed, variáveis alteradas, transformações e parâmetros; rótulos em arquivo separado, se existirem |
 | Predição | `data/analysis/<scenario_id>/<batch_id>/<model_id>/predictions.csv`, com `record_id`, `prediction` e `score` numérico ou vazio; manifesto informa se `score` está disponível e seu significado; sem probabilidade inventada para modelos que não a forneçam |
 | Detecção | `drift.json` e `drift.html` em `reports/runs/<run_id>/`; resultados por variável com `feature`, `method`, `statistic`, `threshold` e `drift_detected`; métricas de desempenho, quando calculáveis, em `performance.json` |
+| Análise | `analise.json` em `reports/runs/<run_id>/`; resultados por variável com `psi`, `psi_band`, `ks_statistic`, `ks_p_value`, `drift_detected` e `reasons`; cruzamento das variáveis alteradas intencionalmente (`configured`, `confirmed`, `not_confirmed`) e conclusões técnicas |
 | Todas as etapas | `config.json`, `events.jsonl`, `metrics.json` e `manifest.json` em `reports/runs/<run_id>/` |
 
 O treinamento publica cada modelo e referência em diretórios novos, sem
