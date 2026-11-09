@@ -327,6 +327,60 @@ violação registrada.
 uv run pytest tests/test_validacao.py -q
 ```
 
+## Bloqueio de ingestão de dados inválidos — F1-04
+
+O componente
+[src/monitoramento/lote_invalido.py](src/monitoramento/lote_invalido.py) gera um
+lote propositalmente inválido a partir da base de simulação. Ele amostra um
+conjunto determinístico (semente fixa), divide em treino, validação e teste e
+injeta uma anomalia para cada tipo de regra do contrato, publicando o manifesto
+do produtor (`stage: simulacao`, `status: success`) junto do lote:
+
+```powershell
+uv run python src/monitoramento/lote_invalido.py ^
+  --config configs/validacao.json ^
+  --source data/analysis/lending_club_100k_v1/simulation_base.csv ^
+  --batch-id batch-f104 ^
+  --size 600
+```
+
+| Partição | Regra exercitada | Anomalia injetada |
+|---|---|---|
+| train | `R_ID_FORMATO` | identificador fora do padrão `LC#######` |
+| train | `R_UNICO_record_id` | linha duplicada |
+| validation | `R_NAO_NULO_loan_amnt` | `loan_amnt` vazio |
+| validation | `R_FAIXA_loan_amnt` | `loan_amnt` acima do limite |
+| test | `R_CATEGORIA_term` | `term` fora do domínio |
+| test | `R_ALVO_DOMINIO` | `loan_status` fora de `0`/`1` |
+
+O lote e o manifesto são gravados em
+`data/analysis/<preparation_id>/lote-invalido/<batch_id>/` e
+`reports/runs/<run_id>/`, ambos ignorados pelo Git. Em seguida, a validação do
+lote comprova o bloqueio: o contrato reprova o conjunto inteiro e a etapa
+encerra com código `2` e `error_code: QUALIDADE_REPROVADA`, registrando cada
+regra violada por `rule_id`, sem aprovar nenhum artefato para consumo.
+
+```powershell
+uv run python src/monitoramento/validacao.py ^
+  --config configs/validacao.json ^
+  --input-manifest reports/runs/<run_id_do_lote>/manifest.json
+```
+
+Resultado real da demonstração (lote de 600 linhas, 601 após a duplicata):
+
+| rule_id | ocorrências |
+|---|---|
+| `R_ALVO_DOMINIO` | 1 |
+| `R_CATEGORIA_term` | 1 |
+| `R_FAIXA_loan_amnt` | 1 |
+| `R_ID_FORMATO` | 1 |
+| `R_NAO_NULO_loan_amnt` | 1 |
+| `R_UNICO_record_id` | 2 |
+
+```powershell
+uv run pytest tests/test_lote_invalido.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -373,6 +427,9 @@ Concluídos:
   treino, validação e teste a partir do manifesto da preparação, com relatório
   `quality.json`, bloqueio do conjunto inteiro em caso de violação e testes em
   `tests/test_validacao.py`.
+- Demonstração do bloqueio de ingestão de dados inválidos (F1-04), com geração
+  de lote com anomalias intencionais, reprovação pelo contrato
+  (`QUALIDADE_REPROVADA`) e testes em `tests/test_lote_invalido.py`.
 
 Pendentes:
 
