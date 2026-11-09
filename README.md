@@ -292,6 +292,41 @@ degradação nos cenários de drift.
 A pasta models/ armazena os modelos gerados localmente. Seus arquivos
 não são versionados, exceto pelo .gitkeep.
 
+## Validação do contrato de qualidade — F1-03
+
+O componente [src/monitoramento/validacao.py](src/monitoramento/validacao.py)
+consome o manifesto de um produtor (`preparacao` ou `simulacao`), confere os
+hashes dos artefatos tabulares e aplica o contrato Pandera descrito em
+[configs/validacao.json](configs/validacao.json):
+
+```powershell
+uv run python src/monitoramento/validacao.py ^
+  --config configs/validacao.json ^
+  --input-manifest reports/runs/<run_id_do_produtor>/manifest.json
+```
+
+| Artefato | Local |
+|---|---|
+| Relatório de qualidade | `reports/runs/<run_id>/quality.json` |
+| Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
+
+O contrato exige ao menos três regras rígidas e cobre identificador (formato),
+alvo (domínio `0`/`1`), campos obrigatórios não nulos, unicidade, faixas
+numéricas e domínios categóricos. Uma violação bloqueia o conjunto inteiro: o
+relatório registra `approved`, `checked_rows` e a lista de `violations` com
+`rule_id` e `count`, sem reescrever nem descartar registros. A etapa aceita
+`--config`, `--input-manifest`, `--run-id` e `--output-dir` e encerra com código
+`0` (aprovado), `2` (dados rejeitados) ou `1` (erro técnico). O contrato completo
+está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
+A execução real sobre o manifesto da preparação aprovou 90.000 linhas
+(60.000 treino, 20.000 validação e 10.000 teste), com `approved: true` e nenhuma
+violação registrada.
+
+```powershell
+uv run pytest tests/test_validacao.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -334,14 +369,18 @@ Concluídos:
 - Treinamento e avaliação do modelo baseline de Credit Scoring (F1-02), com
   registro das métricas de classificação por partição, modelo persistido para
   inferência, referência congelada e testes em `tests/test_treinamento.py`.
+- Contrato de qualidade de dados com Pandera (F1-03), aplicado às partições de
+  treino, validação e teste a partir do manifesto da preparação, com relatório
+  `quality.json`, bloqueio do conjunto inteiro em caso de violação e testes em
+  `tests/test_validacao.py`.
 
 Pendentes:
 
 - Confirmação da licença de uso do dataset.
 - Fixação da versão remota do dataset e revisão das estatísticas anteriores
   para a amostra atual, conforme ressalvas em docs/DATASET.md.
-- Definição do schema de negócio e das regras rígidas de qualidade.
 - Definição dos cenários de drift da produção simulada.
 - Validação funcional integrada do pipeline com dados sintéticos, além dos
-  testes isolados de obtenção, de preparação do dataset e de treinamento.
+  testes isolados de obtenção, de preparação do dataset, de treinamento e de
+  validação.
 - Implementação das etapas restantes do pipeline (simulação, detecção, dashboard).
