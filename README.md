@@ -628,7 +628,7 @@ componentes: um gera o cenário a partir da base reservada de produção e o out
 compara o desempenho do modelo entre o conceito original e o cenário.
 
 O componente
-[src/monitoramento/simulacao_concept_drift.py](src/monitoramento/simulacao_concept_drift.py)
+[src/monitoramento/simulacao/concept_drift/](src/monitoramento/simulacao/concept_drift/)
 mantém as features inalteradas e altera apenas o desfecho de um segmento. No
 cenário de recessão, tomadores `prime` (`fico_range_low >= 700`), historicamente
 considerados seguros, passam a inadimplir mais do que o histórico projetava.
@@ -644,14 +644,14 @@ reprodutibilidade, conforme [configs/simulacao_concept.json](configs/simulacao_c
 | Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
 
 ```powershell
-uv run python src/monitoramento/simulacao_concept_drift.py ^
+uv run simular-concept-drift ^
   --config configs/simulacao_concept.json ^
   --batch-id batch-f205 ^
   --run-id run-f205-concept
 ```
 
 O componente
-[src/monitoramento/avaliacao_concept_drift.py](src/monitoramento/avaliacao_concept_drift.py)
+[src/monitoramento/avaliacao/concept_drift/](src/monitoramento/avaliacao/concept_drift/)
 aplica o pipeline do treinamento sobre as features (inalteradas) e calcula as
 métricas contra os dois conjuntos de rótulos — referência e novo conceito —,
 seguindo [configs/avaliacao_concept.json](configs/avaliacao_concept.json). Como
@@ -659,7 +659,7 @@ os registros e as features são os mesmos, apenas a relação perfil–desfecho 
 o que isola a mudança de conceito da mudança de distribuição.
 
 ```powershell
-uv run python src/monitoramento/avaliacao_concept_drift.py ^
+uv run avaliar-concept-drift ^
   --config configs/avaliacao_concept.json ^
   --input-manifest reports/runs/<run_treinamento>/manifest.json ^
   --input-manifest reports/runs/<run_concept_drift>/manifest.json ^
@@ -687,7 +687,7 @@ de 0,195 → 0,3866). O `roc_auc` caiu de 0,6825 (conceito original) para 0,4612
 evento `drift_alert` registrado.
 
 ```powershell
-uv run pytest tests/test_simulacao_concept_drift.py tests/test_avaliacao_concept_drift.py -q
+uv run pytest tests/simulacao/concept_drift tests/avaliacao/concept_drift -q
 ```
 
 ## Convenção de commits
@@ -762,7 +762,7 @@ Concluídos:
   relação entre perfil e desfecho (P(y|X)) mantendo as features inalteradas,
   comparação de desempenho entre conceito original e cenário em
   `performance.json`, evento `drift_alert` sem converter alerta em erro e testes
-  em `tests/test_simulacao_concept_drift.py` e `tests/test_avaliacao_concept_drift.py`.
+  em `tests/simulacao/concept_drift` e `tests/avaliacao/concept_drift`.
 
 Pendentes:
 

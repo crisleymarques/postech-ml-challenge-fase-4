@@ -76,8 +76,8 @@ flowchart TD
 | Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
 | Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
 | `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
-| `simulacao_concept_drift.py` | Gerar cenário de Concept Drift alterando a relação entre perfil e desfecho de um segmento, mantendo as features | Base de simulação, segmento e regra de mudança | Features inalteradas, rótulos do novo conceito, rótulos originais e manifesto do cenário |
-| `avaliacao_concept_drift.py` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
+| `simulacao/concept_drift/` | Gerar cenário de Concept Drift alterando a relação entre perfil e desfecho de um segmento, mantendo as features | Base de simulação, segmento e regra de mudança | Features inalteradas, rótulos do novo conceito, rótulos originais e manifesto do cenário |
+| `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
 | Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -270,13 +270,13 @@ Os cenários devem separar:
   importantes, mantendo as regras rígidas quando o objetivo for chegar à
   detecção. Isso separa uma rejeição de qualidade de um alerta estatístico.
 - Concept Drift, com mudança explicitamente definida na relação entre
-  entradas e alvo. O cenário é produzido por `simulacao_concept_drift.py`,
+  entradas e alvo. O cenário é produzido por `simulacao/concept_drift/`,
   que mantém as features inalteradas e altera o desfecho de um segmento
   justificado, com risco crescente à medida que o perfil se afasta do limite
   do segmento e limite de probabilidade configurado. Os rótulos originais e
   os rótulos do novo conceito são publicados lado a lado, o que permite
   comparar o desempenho do modelo entre os dois conceitos em
-  `avaliacao_concept_drift.py`. Mudar features ou apenas inverter rótulos sem
+  `avaliacao/concept_drift/`. Mudar features ou apenas inverter rótulos sem
   justificativa não demonstra, por si só, esse fenômeno no problema de negócio.
 
 Data Drift, Concept Drift e queda de desempenho são resultados distintos.
@@ -376,3 +376,14 @@ Kolmogorov-Smirnov, interpretação, resultados, serviço e CLI. A leitura e
 seleção de features reutilizam `drift/dados.py`; arquivos, manifestos e eventos
 reutilizam `infraestrutura/`. A análise não importa o adaptador Evidently.
 O comando é `uv run analisar-drift`; os testes ficam em `tests/drift/analise/`.
+
+
+### Organização do Concept Drift (F2-05)
+
+A simulação fica em `simulacao/concept_drift/`, com configuração, transformações,
+artefatos, serviço e CLI. A avaliação fica em `avaliacao/concept_drift/`, com
+configuração, entradas, inferência, métricas, interpretação, resultados, serviço
+e CLI. As duas etapas reutilizam `infraestrutura/`; o carregamento do modelo
+reutiliza `modelos/carregamento.py`. A inferência da avaliação preserva o limiar
+dos metadados, enquanto a predição mantém sua própria regra com `pipeline.predict`.
+Os comandos são `uv run simular-concept-drift` e `uv run avaliar-concept-drift`.
