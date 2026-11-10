@@ -1,6 +1,7 @@
 """Resolucao e leitura das entradas especificas da predicao."""
 from __future__ import annotations
 
+import re
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,13 @@ carregar_manifesto = partial(
     manifestos.carregar_manifesto, erro=ErroPredicao, contract_version=CONTRACT_VERSION
 )
 artefato = partial(manifestos.artefato, erro=ErroPredicao)
-verificar_artefato = partial(manifestos.verificar_artefato, erro=ErroPredicao)
+def verificar_artefato(item: dict[str, Any]) -> Path:
+    """Exige um SHA-256 valido antes de consumir qualquer artefato."""
+    esperado = item.get("sha256")
+    if not isinstance(esperado, str) or re.fullmatch(r"[0-9a-fA-F]{64}", esperado) is None:
+        raise ErroPredicao("Descritor sem sha256 valido.")
+    return manifestos.verificar_artefato({**item, "sha256": esperado.lower()}, erro=ErroPredicao)
+
 
 
 def separar_manifestos(
@@ -58,3 +65,4 @@ def ler_lote(caminho: Path) -> pd.DataFrame:
     """Le o lote como texto tratando campo vazio como ausencia, como no treino."""
     base = pd.read_csv(caminho, dtype=str, na_filter=False)
     return base.replace("", np.nan)
+

@@ -600,3 +600,6 @@ com `status: failed`, sem saídas válidas, sempre que o diretório de execuçã
 estiver gravável. O início é persistido antes da inferência; o manifesto é
 publicado atomicamente por último. Configuração inválida e diretório de execução
 já existente são recusados antes do início.
+
+A predição exige SHA-256 hexadecimal de 64 caracteres para pipeline, metadados
+e features. Ausência, formato inválido ou divergência bloqueiam o consumo.

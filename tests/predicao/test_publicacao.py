@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from monitoramento.infraestrutura import arquivos
 from monitoramento.predicao import config as cfg
@@ -151,3 +152,25 @@ def test_inicio_persistido_antes_de_carregar_modelo(tmp_path: Path, monkeypatch)
         tmp_path / "config.json", montar_config(), manifestos, "modelo", output,
     ) == cfg.CODIGO_ERRO
     assert json.loads((output / "manifest.json").read_text())["status"] == "failed"
+
+
+@pytest.mark.parametrize("tipo", ["model_pipeline", "model_metadata", "features"])
+@pytest.mark.parametrize("hash_invalido", [None, "", "xyz", "g" * 64, "0" * 64])
+def test_hash_invalido_bloqueia_modelo(tmp_path: Path, monkeypatch, tipo, hash_invalido) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+    for manifesto in manifestos:
+        for item in manifesto["outputs"]:
+            if item["artifact_type"] == tipo:
+                item["sha256"] = hash_invalido
+
+    def nao_carregar(_):
+        pytest.fail("O modelo nao pode ser carregado com artefatos sem integridade.")
+
+    monkeypatch.setattr(servico, "carregar_pipeline", nao_carregar)
+    output = tmp_path / "run"
+    assert servico.processar(
+        tmp_path / "config.json", montar_config(), manifestos, "hash", output,
+        analysis_dir=tmp_path / "analysis",
+    ) == cfg.CODIGO_ERRO
+    assert json.loads((output / "manifest.json").read_text())["status"] == "failed"
+    assert not (tmp_path / "analysis").exists()
