@@ -452,8 +452,23 @@ permanecem dentro das faixas do contrato de qualidade, de modo que o cenário
 chega à detecção de drift sem ser reprovado por qualidade.
 
 ```powershell
-uv run pytest tests/test_simulacao_drift.py -q
+uv run pytest tests/test_simulacao_drift.py tests/test_simulacao_numericos_invalidos.py tests/test_simulacao_alteracoes_efetivas.py -q
 ```
+
+O deslocamento temporal deve ser um número inteiro positivo. Antes de publicar
+os CSVs, o componente compara as distribuições empíricas das features com a
+base de simulação e exige pelo menos duas mudanças efetivas. Parâmetros
+neutros, colunas inteiramente ausentes, zeros ou limites de faixa que
+neutralizem uma transformação não contam como drift. O manifesto e a métrica
+`variaveis_alteradas` registram somente as features efetivamente alteradas;
+identificador, alvo e coluna temporal não entram nessa contagem. Essa
+conferência de alteração não substitui os testes estatísticos da detecção.
+
+Ausências originais são preservadas, mas valores presentes não numéricos ou
+não finitos nas features transformadas interrompem a simulação com
+`ERRO_ENTRADA`, sem expor o conteúdo inválido nos logs nem publicar CSVs para
+consumo. Assim, um valor inválido não é convertido silenciosamente em um
+campo vazio que o contrato de produção poderia aceitar.
 
 Os diretórios da execução e do lote são exclusivos: `--output-dir` e
 `--batch-id` não podem reutilizar destinos existentes, inclusive em chamadas

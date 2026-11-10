@@ -108,7 +108,9 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
             chave not in config[secao] for chave in chaves
         ):
             raise ValueError(f"Configuracao incompleta na secao {secao}.")
-    int(config["time"]["shift_months"])
+    meses = config["time"]["shift_months"]
+    if type(meses) is not int or meses <= 0:
+        raise ValueError("shift_months deve ser um inteiro positivo para avancar o periodo.")
     if int(config["drift"]["seed"]) < 0:
         raise ValueError("A seed deve ser nao negativa.")
     jitter = float(config["drift"].get("jitter", 0.0))
@@ -173,8 +175,12 @@ def aplicar_drift(
         if coluna not in ajustado.columns:
             raise ErroSimulacao(f"Coluna da alteracao ausente na base: {coluna}")
 
-        valores = pd.to_numeric(ajustado[coluna], errors="coerce")
-        ausentes = valores.isna()
+        originais = ajustado[coluna]
+        ausentes = originais.isna() | originais.eq("")
+        valores = pd.to_numeric(originais, errors="coerce")
+        invalidos = ~ausentes & (valores.isna() | ~np.isfinite(valores))
+        if invalidos.any():
+            raise ErroSimulacao(f"Valores numericos invalidos na coluna {coluna}.")
 
         ruido = gerador.uniform(1 - jitter, 1 + jitter, size=len(valores))
         operacao = especificacao["operation"]
@@ -415,6 +421,24 @@ def gerar(
         base_simulada, descritas = aplicar_drift(
             base_simulada, config["drift"]["variables"], semente, jitter
         )
+        # Contar configuracoes nao comprova mudanca: zeros, ausencias e clipping
+        # podem neutralizar uma operacao. Compare as distribuicoes empiricas,
+        # ignorando a ordem das linhas e diferencas apenas de representacao.
+        descritas = [
+            item
+            for item in descritas
+            if item["column"] not in (IDENTIFICADOR, config["target"]["column"], coluna_tempo)
+            and not np.array_equal(
+                np.sort(pd.to_numeric(base[item["column"]]).to_numpy(dtype=float)),
+                np.sort(pd.to_numeric(base_simulada[item["column"]]).to_numpy(dtype=float)),
+                equal_nan=True,
+            )
+        ]
+        if len(descritas) < MINIMO_VARIAVEIS:
+            raise ErroSimulacao(
+                "A simulacao exige alteracao efetiva da distribuicao de ao menos "
+                f"{MINIMO_VARIAVEIS} features."
+            )
         periodo_simulado = resumo_periodo(base_simulada[coluna_tempo], formato)
 
         alvo = config["target"]["column"]

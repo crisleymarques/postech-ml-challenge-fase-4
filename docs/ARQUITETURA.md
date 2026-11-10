@@ -4,7 +4,7 @@
 
 No escopo do PR #32 estão implementados a preparação e separação de dados
 (F1-01), o treinamento baseline (F1-02) e a validação Pandera antes do treino
-(F1-03). A simulação de lotes, predição, detecção de drift e dashboard seguem
+(F1-03). Predição, detecção de drift e dashboard seguem
 planejados e não devem ser tratados como comandos disponíveis. Testes sintéticos
 cobrem a integração preparação → validação → treinamento; resultados históricos
 do dataset real não foram reexecutados como parte do PR #32.
@@ -14,6 +14,12 @@ de referência. Ele gera partições com seis anomalias intencionais a partir da
 base de simulação, preserva destinos existentes e registra falhas de execução.
 Aceita apenas `reference` com `train`, `validation` e `test`; a simulação de
 produção com artefato `features` continua fora desse componente.
+
+O PR #34 implementa a simulação temporal de Data Drift (F2-01) em
+`simulacao_drift.py`: consome a base reservada, exige avanço temporal positivo
+e alteração efetiva da distribuição de pelo menos duas features, preserva
+ausências e rejeita valores numéricos inválidos. Publica features e rótulos
+separados, com parâmetros e alterações efetivas no manifesto.
 
 A arquitetura é um pipeline local em lote, com Python 3.12, uv, arquivos como
 interface e dashboard Streamlit. As dependências incluem pandas,
@@ -54,7 +60,7 @@ flowchart TD
 | `preparacao.py` | Implementado: ler a fonte configurada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto com contrato semântico do alvo |
 | `validacao.py` | Implementado: aplicar contrato Pandera e bloquear conjunto inválido | Manifesto do produtor e contrato de qualidade | Relatório de qualidade e manifesto de aprovação ou rejeição |
 | `treinamento.py` | Implementado: ajustar no treino, selecionar na validação e avaliar no teste | Partições aprovadas e contrato do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
-| Simulação | Planejado: produzir lotes independentes e mudanças configuradas | Base de simulação, cenário e seed | Lotes por período e manifesto de cada cenário |
+| `simulacao_drift.py` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
 | Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
 | Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
 | Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
