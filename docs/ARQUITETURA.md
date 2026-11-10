@@ -185,6 +185,11 @@ disponíveis para execução agora.
 | Detecção | `drift.json` e `drift.html` em `reports/runs/<run_id>/`; resultados por variável com `feature`, `method`, `statistic`, `threshold` e `drift_detected`; métricas de desempenho, quando calculáveis, em `performance.json` |
 | Todas as etapas | `config.json`, `events.jsonl`, `metrics.json` e `manifest.json` em `reports/runs/<run_id>/` |
 
+O treinamento publica cada modelo e referência em diretórios novos, sem
+sobrescrever artefatos existentes. O `model_id` e o `reference_id` incluem um
+sufixo por execução; colisões em qualquer destino são rejeitadas antes da
+persistência. O manifesto da execução é gravado por último e fecha a publicação.
+
 O pipeline serializado inclui o pré-processamento ajustado e o classificador.
 Seu carregamento fica restrito a artefatos produzidos e confiáveis da equipe;
 o formato não torna seguro carregar objetos de fontes desconhecidas.
@@ -296,3 +301,8 @@ A validação funcional do pipeline deverá demonstrar aprovação de dados
 válidos, rejeição do lote inválido, isolamento das partições, alinhamento
 de predições, reprodução dos cenários,
 relatório de drift e exibição de sucesso, bloqueio e falha no dashboard.
+
+
+### Configuração inválida e início da execução
+
+A configuração é validada antes da criação do diretório de uma execução. Se for inválida, o comando termina com código 1 e uma mensagem controlada; como a execução ainda não começou, não cria diretório de execução, eventos nem manifesto. Depois que o diretório é criado, falhas técnicas ao ler ou preparar a origem são registradas em eventos e manifesto terminal sempre que a persistência estiver disponível.
