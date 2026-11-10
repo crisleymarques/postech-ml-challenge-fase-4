@@ -75,7 +75,7 @@ flowchart TD
 | `simulacao/data_drift/` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
 | Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
 | Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
-| `analise_drift.py` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
+| `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
 | Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -359,3 +359,12 @@ entradas, inferência, resultados, serviço e CLI. Manifestos e integridade
 reutilizam `infraestrutura/manifestos.py`; o carregamento do pipeline e a
 compatibilidade com conversores persistidos ficam em `modelos/carregamento.py`.
 O comando é `uv run gerar-predicoes`; os testes ficam em `tests/predicao/`.
+
+
+### Organização da análise estatística (F2-04)
+
+O pacote `drift/analise/` separa configuração, entradas, PSI,
+Kolmogorov-Smirnov, interpretação, resultados, serviço e CLI. A leitura e
+seleção de features reutilizam `drift/dados.py`; arquivos, manifestos e eventos
+reutilizam `infraestrutura/`. A análise não importa o adaptador Evidently.
+O comando é `uv run analisar-drift`; os testes ficam em `tests/drift/analise/`.

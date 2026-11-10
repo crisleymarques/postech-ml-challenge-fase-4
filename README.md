@@ -572,7 +572,7 @@ uv run pytest tests/drift/deteccao -q
 
 ## Análise estatística e interpretação do drift — F2-04
 
-O componente [src/monitoramento/analise_drift.py](src/monitoramento/analise_drift.py)
+O componente [src/monitoramento/drift/analise/](src/monitoramento/drift/analise/)
 complementa a detecção com testes estatísticos próprios e interpretação técnica,
 descritos em [configs/analise_drift.json](configs/analise_drift.json). Para cada
 variável o módulo calcula o **PSI** (Population Stability Index) e, no caso das
@@ -581,7 +581,7 @@ dois manifestos usados na detecção: a referência (features de treino) e o lot
 simulado de produção, com verificação de hash e de `dataset_id`.
 
 ```powershell
-uv run python src/monitoramento/analise_drift.py ^
+uv run analisar-drift ^
   --config configs/analise_drift.json ^
   --input-manifest reports/runs/<run_treinamento>/manifest.json ^
   --input-manifest reports/runs/<run_simulacao>/manifest.json ^
@@ -615,7 +615,7 @@ distintos, de modo que parte das diferenças pode refletir a separação tempora
 não apenas a alteração injetada.
 
 ```powershell
-uv run pytest tests/test_analise_drift.py -q
+uv run pytest tests/drift/analise -q
 ```
 
 ## Convenção de commits
@@ -685,7 +685,7 @@ Concluídos:
 - Análise estatística e interpretação do drift (F2-04), com PSI e teste de
   Kolmogorov-Smirnov por variável, cruzamento com as variáveis alteradas pela
   simulação, conclusões técnicas em `analise.json` e testes em
-  `tests/test_analise_drift.py`.
+  `tests/drift/analise`.
 
 Pendentes:
 
