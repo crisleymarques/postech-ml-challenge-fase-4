@@ -344,3 +344,11 @@ relatório de drift e exibição de sucesso, bloqueio e falha no dashboard.
 ### Configuração inválida e início da execução
 
 A configuração é validada antes da criação do diretório de uma execução. Se for inválida, o comando termina com código 1 e uma mensagem controlada; como a execução ainda não começou, não cria diretório de execução, eventos nem manifesto. Depois que o diretório é criado, falhas técnicas ao ler ou preparar a origem são registradas em eventos e manifesto terminal sempre que a persistência estiver disponível.
+
+### Organização da predição (F2-02)
+
+O componente fica em `src/monitoramento/predicao/`, separado em configuração,
+entradas, inferência, resultados, serviço e CLI. Manifestos e integridade
+reutilizam `infraestrutura/manifestos.py`; o carregamento do pipeline e a
+compatibilidade com conversores persistidos ficam em `modelos/carregamento.py`.
+O comando é `uv run gerar-predicoes`; os testes ficam em `tests/predicao/`.

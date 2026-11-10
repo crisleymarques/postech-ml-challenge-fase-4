@@ -21,6 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
+gerar-predicoes = "monitoramento.predicao.cli:main"
 simular-data-drift = "monitoramento.simulacao.data_drift.cli:main"
 
 [dependency-groups]

@@ -487,7 +487,7 @@ uma mensagem controlada é emitida em `stderr`, sem anunciar sucesso.
 
 ## Predição sobre os dados simulados de produção — F2-02
 
-O componente [src/monitoramento/predicao.py](src/monitoramento/predicao.py)
+O componente [src/monitoramento/predicao/](src/monitoramento/predicao/)
 carrega o pipeline do modelo baseline (F1-02) e o lote de features da simulação
 (F2-01), aplica o pré-processamento já embutido no pipeline e gera as
 predições para cada registro. A etapa recebe dois manifestos de entrada
@@ -504,7 +504,7 @@ desserializar (`carregar_pipeline`), garantindo consistência do
 pré-processamento com o treinamento.
 
 ```powershell
-uv run python src/monitoramento/predicao.py ^
+uv run gerar-predicoes ^
   --config configs/predicao.json ^
   --input-manifest reports/runs/<run_treinamento>/manifest.json ^
   --input-manifest reports/runs/<run_simulacao>/manifest.json ^
@@ -518,7 +518,7 @@ revelar o rótulo. Na execução real sobre o cenário `data-drift` / lote
 e score médio de 0,533.
 
 ```powershell
-uv run pytest tests/test_predicao.py -q
+uv run pytest tests/predicao -q
 ```
 
 ## Convenção de commits
@@ -579,7 +579,7 @@ Concluídos:
 - Predição sobre os dados simulados de produção (F2-02), reutilizando o modelo
   baseline e o lote da simulação, com pré-processamento consistente com o
   treinamento, `predictions.csv` em `data/analysis/` e testes em
-  `tests/test_predicao.py`.
+  `tests/predicao`.
 
 Pendentes:
 
