@@ -177,6 +177,7 @@ def processar(
             ),
         )
     except Exception as erro:  # Fronteira da execucao: persiste falhas tecnicas do modelo e de IO.
+        eventos[:] = [evento for evento in eventos if evento["event"] != "completed"]
         registrar_evento(
             eventos,
             run_id=run_id,
@@ -191,6 +192,7 @@ def processar(
         )
         try:
             escrever_eventos(output_dir / "events.jsonl", eventos)
+            escrever_json(output_dir / "metrics.json", {"run_id": run_id, "measurements": []})
             publicar_manifesto(
                 output_dir / "manifest.json",
                 montar_manifesto(

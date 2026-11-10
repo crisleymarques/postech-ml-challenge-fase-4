@@ -361,3 +361,8 @@ simulação e validação. O resumo `quality` deve aprovar o único artefato
 cenário e lote precisam coincidir. A etapa recalcula a integridade antes de
 inferir e registra `quality_validation_run_id`. Não há aprovação implícita
 quando a validação está ausente ou rejeitada.
+
+A publicação de predições reserva um diretório cenário/lote/modelo novo.
+Reexecuções e tentativas concorrentes não sobrescrevem resultados. CSV e
+manifesto são publicados atomicamente; o manifesto terminal fecha a publicação.
+Em falhas, `outputs` fica vazio e arquivos parciais não são consumíveis.

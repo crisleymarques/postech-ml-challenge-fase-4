@@ -257,3 +257,123 @@ def test_metadata_divergente_bloqueia_inferencia(tmp_path: Path, monkeypatch, ca
         )
         == cfg.CODIGO_ERRO
     )
+
+
+def test_reexecucao_preserva_bytes_e_manifesto_anterior(tmp_path: Path) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+    config = montar_config()
+    analysis = tmp_path / "analysis"
+    primeira = tmp_path / "run1"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            config,
+            manifestos,
+            "primeira",
+            primeira,
+            analysis_dir=analysis,
+        )
+        == 0
+    )
+    manifesto_bytes = (primeira / "manifest.json").read_bytes()
+    saida = json.loads(manifesto_bytes)["outputs"][0]
+    caminho = Path(saida["path"])
+    predicoes_bytes = caminho.read_bytes()
+    segunda = tmp_path / "run2"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            config,
+            manifestos,
+            "segunda",
+            segunda,
+            analysis_dir=analysis,
+        )
+        == 1
+    )
+    assert caminho.read_bytes() == predicoes_bytes
+    assert arquivos.sha256_arquivo(caminho) == saida["sha256"]
+    assert (primeira / "manifest.json").read_bytes() == manifesto_bytes
+    assert json.loads((segunda / "manifest.json").read_text())["outputs"] == []
+
+
+def test_reserva_concorrente_permite_uma_publicacao(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from monitoramento.predicao.resultados import escrever_predicoes
+
+    barreira = Barrier(2)
+    caminho = tmp_path / "modelo" / "predictions.csv"
+
+    def publicar(valor):
+        barreira.wait()
+        try:
+            escrever_predicoes(caminho, pd.DataFrame({"prediction": [valor]}))
+            return True
+        except FileExistsError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        resultados = list(executor.map(publicar, [0, 1]))
+    assert sorted(resultados) == [False, True]
+    assert pd.read_csv(caminho)["prediction"].tolist() in ([0], [1])
+    assert list(caminho.parent.iterdir()) == [caminho]
+
+
+def test_escrita_interrompida_nao_publica_csv_ou_sucesso(tmp_path: Path, monkeypatch) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+
+    def falhar(self, caminho, **kwargs):
+        Path(caminho).write_text("parcial")
+        raise OSError("falha simulada na escrita")
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", falhar)
+    output = tmp_path / "run"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "interrompida",
+            output,
+            analysis_dir=tmp_path / "analysis",
+        )
+        == 1
+    )
+    assert not list((tmp_path / "analysis").rglob("predictions.csv"))
+    assert not list((tmp_path / "analysis").rglob("*.tmp"))
+    manifesto = json.loads((output / "manifest.json").read_text())
+    assert manifesto["status"] == "failed"
+    assert manifesto["outputs"] == []
+
+
+def test_manifesto_fecha_publicacao(tmp_path: Path, monkeypatch) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+    output = tmp_path / "run"
+    publicar = servico.publicar_manifesto
+    chamadas = []
+
+    def verificar(caminho, manifesto):
+        eventos = [
+            json.loads(linha) for linha in (output / "events.jsonl").read_text().splitlines()
+        ]
+        assert eventos[-1]["event"] == "completed"
+        assert (output / "metrics.json").is_file()
+        assert Path(manifesto["outputs"][0]["path"]).is_file()
+        chamadas.append(manifesto["status"])
+        publicar(caminho, manifesto)
+
+    monkeypatch.setattr(servico, "publicar_manifesto", verificar)
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "ultimo",
+            output,
+            analysis_dir=tmp_path / "analysis",
+        )
+        == 0
+    )
+    assert chamadas == ["success"]

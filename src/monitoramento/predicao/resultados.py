@@ -15,9 +15,15 @@ from .config import CONTRACT_VERSION, STAGE
 
 
 def escrever_predicoes(caminho: Path, base: pd.DataFrame) -> None:
-    """Grava as predicoes em CSV."""
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    base.to_csv(caminho, index=False, encoding="utf-8")
+    """Reserva destino novo e publica o CSV completo sem sobrescrever resultados."""
+    caminho.parent.mkdir(parents=True, exist_ok=False)
+    with NamedTemporaryFile(dir=caminho.parent, suffix=".tmp", delete=False) as arquivo:
+        temporario = Path(arquivo.name)
+    try:
+        base.to_csv(temporario, index=False, encoding="utf-8")
+        os.replace(temporario, caminho)
+    finally:
+        temporario.unlink(missing_ok=True)
 
 
 def descritor_artefato(tipo: str, caminho: Path, run_id: str, base: pd.DataFrame) -> dict[str, Any]:

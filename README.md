@@ -496,12 +496,10 @@ pertencem ao mesmo `dataset_id` e publica o resultado em
 `data/analysis/<scenario_id>/<batch_id>/<model_id>/predictions.csv`, seguindo o
 contrato da etapa de predição.
 
-O pipeline persistido foi serializado com os conversores de pré-processamento
-no namespace `__main__` porque o treinamento roda como script. Para que o
-artefato seja lido em outro processo sem alterar o produtor, a predição
-registra os conversores do módulo `monitoramento.treinamento` antes de
-desserializar (`carregar_pipeline`), garantindo consistência do
-pré-processamento com o treinamento.
+O pipeline inclui o pré-processamento ajustado no treino. O carregador também
+mantém compatibilidade com artefatos antigos cujos conversores foram
+serializados em `__main__`; novos modelos usam o módulo estável de
+pré-processamento. Nenhum ajuste é realizado sobre o lote de produção.
 
 ```powershell
 uv run python src/monitoramento/validacao.py ^
@@ -526,6 +524,31 @@ e score médio de 0,533.
 ```powershell
 uv run pytest tests/predicao -q
 ```
+
+
+Falhas da predição após o início publicam evento `failed` e manifesto terminal
+com `status: failed`, sem saídas válidas, sempre que o diretório de execução
+estiver gravável. O início é persistido antes da inferência; o manifesto é
+publicado atomicamente por último. Configuração inválida e diretório de execução
+já existente são recusados antes do início.
+
+A predição exige SHA-256 hexadecimal de 64 caracteres para pipeline, metadados
+e features. Ausência, formato inválido ou divergência bloqueiam o consumo.
+
+A predição exige igualdade exata do `schema_version` do treinamento, dos
+metadados e da simulação. Os metadados também devem corresponder ao
+`dataset_id`, `model_id` e `reference_id` do manifesto do treinamento.
+
+A aprovação de produção deve corresponder ao cenário, lote, dataset, schema,
+produtor, caminho e hash exatos das features. O manifesto da predição registra
+`quality_validation_run_id`. Chamadas antigas com apenas dois manifestos são
+recusadas; execute a validação com `--profile production` e acrescente sua saída.
+
+O diretório de predições de cada combinação cenário/lote/modelo é reservado
+exclusivamente e nunca reutilizado, mesmo com outro `run_id`. O CSV é publicado
+atomicamente. Uma colisão preserva resultados anteriores e gera execução falha.
+Diretórios parciais de falhas ficam reservados para diagnóstico; uma nova
+simulação deve usar novo `batch_id`, sem apagar resultados automaticamente.
 
 ## Convenção de commits
 
@@ -599,22 +622,3 @@ Pendentes:
   testes isolados de obtenção, de preparação do dataset, de treinamento e de
   validação.
 - Implementação das etapas restantes do pipeline (detecção, dashboard).
-
-
-Falhas da predição após o início publicam evento `failed` e manifesto terminal
-com `status: failed`, sem saídas válidas, sempre que o diretório de execução
-estiver gravável. O início é persistido antes da inferência; o manifesto é
-publicado atomicamente por último. Configuração inválida e diretório de execução
-já existente são recusados antes do início.
-
-A predição exige SHA-256 hexadecimal de 64 caracteres para pipeline, metadados
-e features. Ausência, formato inválido ou divergência bloqueiam o consumo.
-
-A predição exige igualdade exata do `schema_version` do treinamento, dos
-metadados e da simulação. Os metadados também devem corresponder ao
-`dataset_id`, `model_id` e `reference_id` do manifesto do treinamento.
-
-A aprovação de produção deve corresponder ao cenário, lote, dataset, schema,
-produtor, caminho e hash exatos das features. O manifesto da predição registra
-`quality_validation_run_id`. Chamadas antigas com apenas dois manifestos são
-recusadas; execute a validação com `--profile production` e acrescente sua saída.
