@@ -9,6 +9,12 @@ planejados e não devem ser tratados como comandos disponíveis. Testes sintéti
 cobrem a integração preparação → validação → treinamento; resultados históricos
 do dataset real não foram reexecutados como parte do PR #32.
 
+O PR #33 acrescenta `lote_invalido.py` para demonstrar a rejeição pelo contrato
+de referência. Ele gera partições com seis anomalias intencionais a partir da
+base de simulação, preserva destinos existentes e registra falhas de execução.
+Aceita apenas `reference` com `train`, `validation` e `test`; a simulação de
+produção com artefato `features` continua fora desse componente.
+
 A arquitetura é um pipeline local em lote, com Python 3.12, uv, arquivos como
 interface e dashboard Streamlit. As dependências incluem pandas,
 scikit-learn, Pandera e Evidently.

@@ -374,6 +374,26 @@ lote comprova o bloqueio: o contrato reprova o conjunto inteiro e a etapa
 encerra com código `2` e `error_code: QUALIDADE_REPROVADA`, registrando cada
 regra violada por `rule_id`, sem aprovar nenhum artefato para consumo.
 
+Esta demonstração usa somente o perfil `reference`, com as partições
+`train`, `validation` e `test`. Configurações de produção (`features`) ou
+partições não suportadas são recusadas antes de iniciar a execução; o
+gerador não substitui o simulador de lotes de produção.
+
+O campo `target_contract` de `configs/validacao.json` declara a semântica do
+alvo da origem usada nesta demonstração e deve corresponder ao `target` da
+preparação que gerou essa base. O gerador confere a coluna e o domínio contra
+as regras de qualidade e publica esse contrato em `target` no manifesto,
+preservando o vínculo exigido pela validação e pelo treinamento.
+
+Por padrão, cada chamada gera novos identificadores de execução e lote.
+Se informar `--batch-id`, use um valor novo: um destino existente é recusado
+sem sobrescrever seus CSVs. O mesmo vale para `--output-dir`. Configuração
+inválida termina com código `1` antes de criar o diretório de execução.
+Falhas posteriores ao início, como origem ausente ou lote insuficiente,
+registram eventos e manifesto terminal com `status: failed` e `error_code`,
+sempre que a persistência estiver disponível. O manifesto é publicado após
+os demais arquivos da execução.
+
 ```powershell
 uv run python src/monitoramento/validacao.py --config configs/validacao.json --input-manifest reports/runs/<run_id_do_lote>/manifest.json
 ```

@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from monitoramento import lote_invalido as li
+from monitoramento import treinamento as treino
 from monitoramento import validacao as val
 
 
@@ -19,7 +20,15 @@ def montar_config() -> dict:
         "stage": "validacao",
         "dataset_id": "teste",
         "schema_version": "1.0",
+        "profile": "reference",
         "artifacts": list(li.PARTICOES),
+        "target_contract": {
+            "column": "loan_status",
+            "positive_class": "Charged Off",
+            "negative_class": "Fully Paid",
+            "positive_value": 1,
+            "negative_value": 0,
+        },
         "rules": {
             "identifier": {"column": "record_id", "pattern": "^LC[0-9]{7}$"},
             "target": {"column": "loan_status", "domain": [0, 1]},
@@ -74,6 +83,42 @@ def test_carregar_config_rejeita_versao_incompativel(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="incompativel"):
         li.carregar_config(caminho)
+
+
+@pytest.mark.parametrize(
+    "profile,artifacts",
+    [
+        ("production", list(li.PARTICOES)),
+        ("production", ["features"]),
+        ("reference", ["train", "validation", "features"]),
+        ("reference", ["train", "validation", "unknown"]),
+        ("reference", ["train", "train", "test"]),
+    ],
+)
+def test_carregar_config_rejeita_perfil_ou_artifacts_nao_suportados(
+    tmp_path: Path, profile: str, artifacts: list[str]
+) -> None:
+    config = montar_config()
+    config["profile"] = profile
+    config["artifacts"] = artifacts
+    config_path = escrever_config(tmp_path, config)
+    with pytest.raises(ValueError):
+        li.carregar_config(config_path)
+    output_dir = tmp_path / "run"
+    assert (
+        li.gerar(
+            config_path=config_path,
+            source_path=tmp_path / "origem.csv",
+            analysis_dir=tmp_path / "analysis",
+            batch_id="b",
+            run_id="r",
+            output_dir=output_dir,
+            total=30,
+            seed=42,
+        )
+        == li.CODIGO_ERRO
+    )
+    assert not output_dir.exists()
 
 
 def test_carregar_base_rejeita_origem_ausente(tmp_path: Path) -> None:
@@ -166,6 +211,112 @@ def test_gerar_publica_manifesto_e_artefatos(tmp_path: Path) -> None:
     assert nomes == {"linhas_geradas", "anomalias_total", "regras_exercitadas"}
     assert (output_dir / "events.jsonl").is_file()
     assert (output_dir / "config.json").is_file()
+    assert manifesto["target"] == montar_config()["target_contract"]
+
+
+def test_gerar_nao_sobrescreve_execucao_ou_lote_existente(tmp_path: Path) -> None:
+    config_path = escrever_config(tmp_path, montar_config())
+    origem = escrever_origem(tmp_path)
+    output_dir = tmp_path / "runs" / "run-lote"
+    kwargs = dict(
+        config_path=config_path,
+        source_path=origem,
+        analysis_dir=tmp_path / "analysis",
+        batch_id="batch-1",
+        run_id="run-lote",
+        output_dir=output_dir,
+        total=30,
+        seed=42,
+    )
+    assert li.gerar(**kwargs) == li.CODIGO_SUCESSO
+    manifest_hash = li.sha256_arquivo(output_dir / "manifest.json")
+    csv_hashes = {
+        path.name: li.sha256_arquivo(path)
+        for path in (tmp_path / "analysis" / "batch-1").glob("*.csv")
+    }
+    kwargs["seed"] = 7
+    assert li.gerar(**kwargs) == li.CODIGO_ERRO
+    kwargs["output_dir"] = tmp_path / "runs" / "run-novo"
+    kwargs["run_id"] = "run-novo"
+    assert li.gerar(**kwargs) == li.CODIGO_ERRO
+    assert li.sha256_arquivo(output_dir / "manifest.json") == manifest_hash
+    assert {
+        path.name: li.sha256_arquivo(path)
+        for path in (tmp_path / "analysis" / "batch-1").glob("*.csv")
+    } == csv_hashes
+
+
+@pytest.mark.parametrize("falha", ["origem_ausente", "csv_malformado", "lote_insuficiente"])
+def test_erro_apos_inicio_publica_manifesto_failed(tmp_path: Path, falha: str) -> None:
+    config_path = escrever_config(tmp_path, montar_config())
+    output_dir = tmp_path / "runs" / "run-falha"
+    origem = tmp_path / "ausente.csv"
+    if falha == "csv_malformado":
+        origem.write_text('record_id,loan_amnt\n"sem fechamento', encoding="utf-8")
+    elif falha == "lote_insuficiente":
+        origem = escrever_origem(tmp_path, quantidade=10)
+    codigo = li.gerar(
+        config_path=config_path,
+        source_path=origem,
+        analysis_dir=tmp_path / "analysis",
+        batch_id="b",
+        run_id="r",
+        output_dir=output_dir,
+        total=30,
+        seed=42,
+    )
+    assert codigo == li.CODIGO_ERRO
+    manifesto = json.loads((output_dir / "manifest.json").read_text())
+    assert manifesto["status"] == "failed"
+    assert manifesto["error_code"] == "ERRO_ENTRADA"
+    assert manifesto["inputs"] == []
+    assert manifesto["outputs"] == []
+    assert json.loads((output_dir / "metrics.json").read_text())["measurements"] == []
+    assert Path(manifesto["config_path"]).is_file()
+    assert [
+        json.loads(linha)["event"]
+        for linha in (output_dir / "events.jsonl").read_text().splitlines()
+    ] == ["started", "failed"]
+
+
+def test_falha_na_publicacao_nao_registra_sucesso(tmp_path: Path, monkeypatch) -> None:
+    config_path = escrever_config(tmp_path, montar_config())
+    origem = escrever_origem(tmp_path)
+    output_dir = tmp_path / "run"
+    escrever = li.escrever_json
+    gravacoes = []
+    falhou = False
+
+    def gravar(caminho, conteudo):
+        nonlocal falhou
+        if caminho.name == "metrics.json" and not falhou:
+            falhou = True
+            raise OSError("Falha simulada na publicacao")
+        escrever(caminho, conteudo)
+        gravacoes.append(caminho.name)
+
+    monkeypatch.setattr(li, "escrever_json", gravar)
+    assert (
+        li.gerar(
+            config_path=config_path,
+            source_path=origem,
+            analysis_dir=tmp_path / "analysis",
+            batch_id="b",
+            run_id="r",
+            output_dir=output_dir,
+            total=30,
+            seed=42,
+        )
+        == li.CODIGO_ERRO
+    )
+    manifesto = json.loads((output_dir / "manifest.json").read_text())
+    assert manifesto["status"] == "failed"
+    assert manifesto["error_code"] == "ERRO_TECNICO"
+    assert gravacoes[-1] == "manifest.json"
+    assert [
+        json.loads(linha)["event"]
+        for linha in (output_dir / "events.jsonl").read_text().splitlines()
+    ] == ["started", "failed"]
 
 
 def test_lote_invalido_e_reprovado_pela_validacao(tmp_path: Path) -> None:
@@ -209,3 +360,6 @@ def test_lote_invalido_e_reprovado_pela_validacao(tmp_path: Path) -> None:
     saida = json.loads((valid_dir / "manifest.json").read_text(encoding="utf-8"))
     assert saida["status"] == "rejected"
     assert saida["error_code"] == "QUALIDADE_REPROVADA"
+    with pytest.raises(ValueError, match="Dependencia sem sucesso"):
+        treino.carregar_manifesto(valid_dir / "manifest.json")
+    assert not (tmp_path / "models").exists()
