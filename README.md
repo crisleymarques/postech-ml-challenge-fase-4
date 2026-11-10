@@ -523,7 +523,7 @@ uv run pytest tests/predicao -q
 
 ## Detecção de Data Drift — F2-03
 
-O componente [src/monitoramento/deteccao.py](src/monitoramento/deteccao.py)
+O componente [src/monitoramento/drift/deteccao/servico.py](src/monitoramento/drift/deteccao/servico.py)
 compara a distribuição da referência congelada (features de treino) com a do
 lote de produção simulado, usando o `DataDriftPreset` do Evidently descrito em
 [configs/deteccao.json](configs/deteccao.json). A etapa recebe dois manifestos
@@ -533,7 +533,7 @@ etapas anteriores. A referência é lida a partir dos metadados do modelo
 (numéricas e categóricas) para aplicar os tipos corretos antes da comparação.
 
 ```powershell
-uv run python src/monitoramento/deteccao.py ^
+uv run detectar-drift ^
   --config configs/deteccao.json ^
   --input-manifest reports/runs/<run_treinamento>/manifest.json ^
   --input-manifest reports/runs/<run_simulacao>/manifest.json ^
@@ -567,7 +567,7 @@ de conjunto de 0,5), incluindo as cinco alteradas pela simulação
 evento `drift_alert` foi registrado.
 
 ```powershell
-uv run pytest tests/test_deteccao.py -q
+uv run pytest tests/drift/deteccao -q
 ```
 
 ## Convenção de commits
@@ -633,7 +633,7 @@ Concluídos:
   congelada com o lote de produção simulado, com regra de decisão por dois
   limiares, resultado por variável, relatório `drift.json`/`drift.html`, evento
   `drift_alert` sem converter alerta em erro e testes em
-  `tests/test_deteccao.py`.
+  `tests/drift/deteccao`.
 
 Pendentes:
 

@@ -28,6 +28,11 @@ linha de comando (`cli.py`). Hashes e escrita JSON ficam em
 `infraestrutura/arquivos.py`; timestamps e eventos JSONL ficam em
 `infraestrutura/observabilidade.py`. O comando é `uv run simular-data-drift`.
 
+O pacote `drift/deteccao/` separa configuração, entradas, regras, resultados,
+serviço e CLI. A integração com o Evidently fica em `adaptador_evidently.py`;
+a leitura e seleção de features ficam em `drift/dados.py`. As regras de
+decisão não importam o Evidently. O comando é `uv run detectar-drift`.
+
 A arquitetura é um pipeline local em lote, com Python 3.12, uv, arquivos como
 interface e dashboard Streamlit. As dependências incluem pandas,
 scikit-learn, Pandera e Evidently.
