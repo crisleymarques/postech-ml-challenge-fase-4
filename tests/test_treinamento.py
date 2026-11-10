@@ -114,6 +114,7 @@ def escrever_manifesto(tmp_path: Path, config: dict) -> Path:
         "inputs": artefatos,
         "outputs": [],
         "dataset_id": config["dataset_id"],
+        "target_contract": config["target"],
         "schema_version": config["schema_version"],
         "model_id": None,
         "reference_id": None,
@@ -159,7 +160,9 @@ def config_validacao(config: dict) -> dict:
     }
 
 
-def validar_preparacao(tmp_path: Path, config: dict) -> tuple[int, dict]:
+def validar_preparacao(
+    tmp_path: Path, config: dict, target_contract: dict | None = None
+) -> tuple[int, dict]:
     manifesto_prep = json.loads(escrever_manifesto(tmp_path, config).read_text(encoding="utf-8"))
     manifesto_prep.update(
         {
@@ -169,6 +172,7 @@ def validar_preparacao(tmp_path: Path, config: dict) -> tuple[int, dict]:
             "inputs": [],
             "outputs": manifesto_prep["inputs"],
             "schema_version": None,
+            "target": target_contract if target_contract is not None else config["target"],
         }
     )
     manifesto_prep.pop("quality")
@@ -366,6 +370,49 @@ def test_fluxo_preparacao_validacao_treinamento_aprovado(tmp_path: Path) -> None
     assert metadados["quality_validation_run_id"] == "validacao-run-1"
 
 
+@pytest.mark.parametrize(
+    "target_contract",
+    [
+        {
+            "column": "loan_status",
+            "positive_class": "Charged Off",
+            "negative_class": "Fully Paid",
+            "positive_value": 0,
+            "negative_value": 1,
+        },
+        {
+            "column": "loan_status",
+            "positive_class": "Fully Paid",
+            "negative_class": "Charged Off",
+            "positive_value": 1,
+            "negative_value": 0,
+        },
+        None,
+    ],
+)
+def test_barreira_rejeita_semantica_de_alvo_divergente_ou_ausente(
+    tmp_path: Path, target_contract: dict | None
+) -> None:
+    config = montar_config(tmp_path)
+    escrever_particoes(tmp_path)
+    manifesto = json.loads(escrever_manifesto(tmp_path, config).read_text(encoding="utf-8"))
+    if target_contract is None:
+        manifesto.pop("target_contract")
+    else:
+        manifesto["target_contract"] = target_contract
+    output_dir = tmp_path / "runs" / "alvo-incompativel"
+    output_dir.mkdir(parents=True)
+
+    codigo = treino.processar(
+        Path("configs/treinamento.json"), config, manifesto, "alvo-bloqueado", output_dir
+    )
+
+    assert codigo == treino.CODIGO_ERRO
+    assert not list(Path(config["outputs"]["models_dir"]).glob("*"))
+    saida = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert saida["status"] == "failed"
+
+
 def test_fluxo_validacao_rejeitada_bloqueia_treinamento(tmp_path: Path) -> None:
     config = montar_config(tmp_path)
     particoes = escrever_particoes(tmp_path)
@@ -384,6 +431,32 @@ def test_fluxo_validacao_rejeitada_bloqueia_treinamento(tmp_path: Path) -> None:
         manifesto_validacao,
         "treino-rejeitado",
         output_dir,
+    )
+
+    assert codigo == treino.CODIGO_ERRO
+    assert not list(Path(config["outputs"]["models_dir"]).glob("*"))
+
+
+def test_fluxo_alvo_semantico_invertido_bloqueia_antes_do_fit(tmp_path: Path) -> None:
+    config = montar_config(tmp_path)
+    escrever_particoes(tmp_path)
+    alvo_invertido = {
+        "column": "loan_status",
+        "positive_class": "Fully Paid",
+        "negative_class": "Charged Off",
+        "positive_value": 1,
+        "negative_value": 0,
+    }
+    codigo_validacao, manifesto_validacao = validar_preparacao(
+        tmp_path, config, target_contract=alvo_invertido
+    )
+    assert codigo_validacao == val.CODIGO_SUCESSO
+    assert manifesto_validacao["target_contract"] == alvo_invertido
+
+    output_dir = tmp_path / "runs" / "alvo-invertido"
+    output_dir.mkdir()
+    codigo = treino.processar(
+        Path("configs/treinamento.json"), config, manifesto_validacao, "alvo-invertido", output_dir
     )
 
     assert codigo == treino.CODIGO_ERRO
@@ -441,6 +514,8 @@ def test_cli_serializa_pipeline_carregavel_em_outro_processo(tmp_path: Path) -> 
     output = tmp_path / "runs" / "cli-run"
     raiz = Path(__file__).resolve().parents[1]
     script = raiz / "src/monitoramento/treinamento.py"
+    env_sem_pythonpath = os.environ.copy()
+    env_sem_pythonpath.pop("PYTHONPATH", None)
 
     resultado = subprocess.run(
         [
@@ -456,6 +531,7 @@ def test_cli_serializa_pipeline_carregavel_em_outro_processo(tmp_path: Path) -> 
             str(output),
         ],
         cwd=raiz,
+        env=env_sem_pythonpath,
         capture_output=True,
         text=True,
         check=False,

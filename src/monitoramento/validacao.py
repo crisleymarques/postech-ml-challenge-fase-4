@@ -365,6 +365,7 @@ def montar_manifesto(
         "outputs": saidas,
         "dataset_id": config.get("dataset_id"),
         "schema_version": config.get("schema_version"),
+        "target_contract": relatorio.get("target_contract") if relatorio else None,
         "model_id": None,
         "reference_id": None,
         "scenario_id": next(
@@ -488,6 +489,28 @@ def processar(
         if manifesto.get("dataset_id") != config["dataset_id"]:
             raise ErroArtefato("dataset_id divergente entre configuracao e manifesto.")
 
+        target_contract = manifesto.get("target")
+        if config.get("profile", "reference") == "reference":
+            if not isinstance(target_contract, dict):
+                raise ErroArtefato("Manifesto de preparacao sem contrato semantico do alvo.")
+            regras_alvo = config["rules"]["target"]
+            dominio_esperado = {str(valor) for valor in regras_alvo["domain"]}
+            dominio_origem = {
+                str(target_contract.get("positive_value")),
+                str(target_contract.get("negative_value")),
+            }
+            if (
+                target_contract.get("column") != regras_alvo["column"]
+                or None
+                in (
+                    target_contract.get("positive_class"),
+                    target_contract.get("negative_class"),
+                )
+                or target_contract.get("positive_class") == target_contract.get("negative_class")
+                or dominio_origem != dominio_esperado
+            ):
+                raise ErroArtefato("Contrato semantico do alvo incompativel com a validacao.")
+
         artefatos = resolver_artefatos(manifesto, config)
         schema = construir_contrato(config)
 
@@ -533,6 +556,11 @@ def processar(
         relatorio = {
             "dataset_id": config["dataset_id"],
             "schema_version": config["schema_version"],
+            "target_contract": (
+                target_contract
+                if config.get("profile", "reference") == "reference"
+                else None
+            ),
             "approved": aprovado,
             "checked_rows": linhas_verificadas,
             "violations": violacoes,

@@ -13,11 +13,8 @@ conforme o grupo define escopo e implementação.
 
 | Documento | Conteúdo |
 |---|---|
-| [Contexto do projeto](docs/CONTEXTO_PROJETO.md) | Requisitos acadêmicos, decisões e pendências |
-| [Arquitetura e contratos](docs/ARQUITETURA.md) | Fluxo proposto, interfaces e artefatos entre componentes |
+| [Arquitetura e contratos](docs/ARQUITETURA.md) | Fluxo implementado e interfaces planejadas |
 | [Dataset — PREP-02](docs/DATASET.md) | Origem, download, amostragem, análise e limitações dos dados |
-| [Registro de alterações](docs/REGISTRO_DE_ALTERACOES.md) | Autorizações, alterações e validações documentadas |
-| [Instruções do repositório](AGENTS.md) | Regras de orientação, execução e privacidade |
 
 ## Ambiente de desenvolvimento
 
@@ -100,22 +97,23 @@ Durante o setup, foram verificadas a consistência das dependências,
 as importações das bibliotecas e a disponibilidade de Ruff e pytest.
 A análise estática também passou.
 
-Essas verificações não validam o pipeline completo. A obtenção e a separação
-do dataset possuem testes isolados descritos abaixo; contratos de dados,
-treinamento, experimentos de drift e dashboard permanecem pendentes.
+As verificações anteriores cobriram a configuração e os testes isolados então
+disponíveis. O fluxo sintético preparação → validação → treinamento está
+coberto pelos testes atuais; simulação de lotes, detecção de drift e dashboard
+permanecem pendentes.
 
 ## Arquitetura e contratos
 
-A arquitetura definida para implementação é um pipeline local em lote:
-preparação e separação → validação de dados → treinamento e avaliação;
-em paralelo ao treino, a base reservada alimenta simulação → validação de
-lotes → predição → detecção. Lotes inválidos são bloqueados antes de chegar
-ao modelo. Todas as etapas exportam eventos e resultados para monitoramento.
+A arquitetura é um pipeline local em lote: preparação e separação → validação
+de dados → treinamento e avaliação, etapas implementadas; em paralelo ao treino,
+a base reservada deverá alimentar simulação → validação de lotes → predição →
+detecção. Lotes inválidos são bloqueados antes de chegar ao modelo. As etapas
+implementadas exportam eventos e resultados para monitoramento.
 
 O dashboard **Streamlit** foi escolhido para observabilidade, com eventos
 JSONL, métricas JSON e relatórios HTML do Evidently. MLflow não integra a
-arquitetura base. As métricas específicas e os limiares serão definidos pelo
-grupo durante a implementação.
+arquitetura base. As métricas específicas e os limiares de drift serão definidos
+antes da implementação da detecção.
 
 Os [contratos entre componentes](docs/ARQUITETURA.md) detalham o diagrama,
 os formatos CSV/JSON/JSONL, manifestos, argumentos futuros dos scripts,
@@ -123,10 +121,10 @@ estados de execução e artefatos produzidos por etapa. Dados de treino,
 validação e teste ficam separados da base e dos lotes de produção simulada;
 a referência de drift é congelada a partir das features de treino.
 
-Os scripts de obtenção/amostragem do dataset e de preparação e separação das
-partições estão implementados. Contratos Pandera, treinamento, simulação,
-detecção e dashboard ainda não estão implementados. A documentação de arquitetura
-não substitui as evidências funcionais nem a governança exigidas na entrega.
+Obtenção/amostragem, preparação, validação Pandera e treinamento baseline estão
+implementados. Simulação de lotes, predição, detecção de drift e dashboard
+continuam planejados. As métricas históricas desta documentação não foram
+reexecutadas como parte das correções do PR #32.
 
 ## Dataset — PREP-02
 
@@ -242,9 +240,7 @@ validação e avalia no teste, conforme os parâmetros de
 [configs/treinamento.json](configs/treinamento.json):
 
 ```powershell
-uv run python src/monitoramento/treinamento.py ^
-  --config configs/treinamento.json ^
-  --input-manifest reports/runs/<run_id_da_validacao>/manifest.json
+uv run python src/monitoramento/treinamento.py --config configs/treinamento.json --input-manifest reports/runs/<run_id_da_validacao>/manifest.json
 ```
 
 | Artefato | Local |
@@ -313,9 +309,7 @@ hashes dos artefatos tabulares e aplica o contrato Pandera descrito em
 [configs/validacao.json](configs/validacao.json):
 
 ```powershell
-uv run python src/monitoramento/validacao.py ^
-  --config configs/validacao.json ^
-  --input-manifest reports/runs/<run_id_do_produtor>/manifest.json
+uv run python src/monitoramento/validacao.py --config configs/validacao.json --input-manifest reports/runs/<run_id_do_produtor>/manifest.json
 ```
 
 O perfil padrão `reference` exige o alvo e valida `train`, `validation` e
@@ -324,10 +318,7 @@ O perfil padrão `reference` exige o alvo e valida `train`, `validation` e
 colunas de identificador/cenário/lote e aplica as regras às features.
 
 ```powershell
-uv run python src/monitoramento/validacao.py ^
-  --config configs/validacao.json ^
-  --profile production ^
-  --input-manifest reports/runs/<run_id_da_simulacao>/manifest.json
+uv run python src/monitoramento/validacao.py --config configs/validacao.json --profile production --input-manifest reports/runs/<run_id_da_simulacao>/manifest.json
 ```
 
 | Artefato | Local |
@@ -399,7 +390,8 @@ Concluídos:
 - Contrato de qualidade de dados com Pandera (F1-03), aplicado às partições de
   treino, validação e teste a partir do manifesto da preparação, com relatório
   `quality.json`, bloqueio do conjunto inteiro em caso de violação e testes em
-  `tests/test_validacao.py`.
+  `tests/test_validacao.py`. O manifesto registra também a semântica do alvo
+  propagada desde a preparação e exigida pelo treinamento.
 
 Pendentes:
 
@@ -407,7 +399,6 @@ Pendentes:
 - Fixação da versão remota do dataset e revisão das estatísticas anteriores
   para a amostra atual, conforme ressalvas em docs/DATASET.md.
 - Definição dos cenários de drift da produção simulada.
-- Validação funcional integrada do pipeline com dados sintéticos, além dos
-  testes isolados de obtenção, de preparação do dataset, de treinamento e de
-  validação.
+- Execução dos testes e Ruff no ambiente definido pelo `uv.lock` após estas
+  correções; métricas e resultados históricos não foram reexecutados.
 - Implementação das etapas restantes do pipeline (simulação, detecção, dashboard).

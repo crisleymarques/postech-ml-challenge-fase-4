@@ -90,6 +90,13 @@ def escrever_manifesto(tmp_path: Path, config: dict) -> Path:
         "inputs": [],
         "outputs": artefatos,
         "dataset_id": config["dataset_id"],
+        "target": {
+            "column": "loan_status",
+            "positive_class": "Charged Off",
+            "negative_class": "Fully Paid",
+            "positive_value": 1,
+            "negative_value": 0,
+        },
         "schema_version": None,
         "model_id": None,
         "reference_id": None,
@@ -383,6 +390,7 @@ def test_processar_sucesso_gera_quality_e_manifesto(tmp_path: Path) -> None:
     assert manifesto_saida["status"] == "success"
     assert manifesto_saida["stage"] == "validacao"
     assert manifesto_saida["schema_version"] == "1.0"
+    assert manifesto_saida["target_contract"]["positive_class"] == "Charged Off"
     assert manifesto_saida["quality"]["approved"] is True
     assert [item["artifact_type"] for item in manifesto_saida["inputs"]] == list(PARTICOES)
     assert manifesto_saida["outputs"][0]["artifact_type"] == "quality_report"
@@ -438,3 +446,28 @@ def test_processar_falha_com_dataset_incompativel(tmp_path: Path) -> None:
     saida = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     assert saida["status"] == "failed"
     assert saida["error_code"] == "ARTEFATO_INCOMPATIVEL"
+
+
+@pytest.mark.parametrize("metadata", [None, {"column": "loan_status", "positive_value": 1}])
+def test_processar_exige_contrato_semantico_do_alvo(
+    tmp_path: Path, metadata: dict | None
+) -> None:
+    config = montar_config(tmp_path)
+    escrever_particoes(tmp_path)
+    manifesto = json.loads(escrever_manifesto(tmp_path, config).read_text(encoding="utf-8"))
+    if metadata is None:
+        manifesto.pop("target")
+    else:
+        manifesto["target"] = metadata
+    output_dir = tmp_path / "runs" / "alvo-ausente"
+    output_dir.mkdir(parents=True)
+
+    codigo = val.processar(
+        Path("configs/validacao.json"), config, manifesto, "alvo-sem-contrato", output_dir
+    )
+
+    assert codigo == val.CODIGO_ERRO
+    assert not (output_dir / "quality.json").exists()
+    resultado = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert resultado["status"] == "failed"
+    assert resultado["error_code"] == "ARTEFATO_INCOMPATIVEL"

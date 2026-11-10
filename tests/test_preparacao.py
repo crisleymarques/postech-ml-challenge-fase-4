@@ -153,6 +153,7 @@ def test_processar_sucesso_gera_particoes_e_manifesto(tmp_path: Path) -> None:
     assert manifesto["stage"] == "preparacao"
     assert manifesto["run_id"] == "run-1"
     assert manifesto["preparation_id"] == "prep-v1"
+    assert manifesto["target"] == config["target"]
     assert len(manifesto["outputs"]) == 4
     assert sum(item["row_count"] for item in manifesto["outputs"]) == 10
     for artefato in manifesto["outputs"]:

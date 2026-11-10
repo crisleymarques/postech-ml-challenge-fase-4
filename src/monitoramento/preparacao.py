@@ -354,6 +354,7 @@ def montar_manifesto(
         "outputs": saidas,
         "dataset_id": config.get("dataset_id"),
         "schema_version": None,
+        "target": config.get("target"),
         "model_id": None,
         "reference_id": None,
         "scenario_id": None,

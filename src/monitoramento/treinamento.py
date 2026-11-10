@@ -214,6 +214,15 @@ def validar_barreira(manifesto: dict[str, Any], config: dict[str, Any]) -> None:
         raise ErroArtefato("schema_version divergente ou ausente no manifesto de validacao.")
     if qualidade.get("schema_version") != schema_version:
         raise ErroArtefato("schema_version divergente no relatorio de qualidade.")
+    target_contract = manifesto.get("target_contract")
+    target_esperado = config.get("target")
+    if not isinstance(target_contract, dict):
+        raise ErroArtefato("Manifesto de validacao sem contrato semantico do alvo.")
+    campos_alvo = ("column", "positive_class", "negative_class", "positive_value", "negative_value")
+    if not isinstance(target_esperado, dict) or any(
+        target_contract.get(campo) != target_esperado.get(campo) for campo in campos_alvo
+    ):
+        raise ErroArtefato("Contrato semantico do alvo divergente entre validacao e treinamento.")
     por_tipo = {item.get("artifact_type"): item for item in qualidade.get("artifacts", [])}
     for item in manifesto.get("inputs", []):
         aprovado = por_tipo.get(item.get("artifact_type"))
