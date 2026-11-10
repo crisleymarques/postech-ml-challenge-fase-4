@@ -13,11 +13,8 @@ conforme o grupo define escopo e implementação.
 
 | Documento | Conteúdo |
 |---|---|
-| [Contexto do projeto](docs/CONTEXTO_PROJETO.md) | Requisitos acadêmicos, decisões e pendências |
-| [Arquitetura e contratos](docs/ARQUITETURA.md) | Fluxo proposto, interfaces e artefatos entre componentes |
+| [Arquitetura e contratos](docs/ARQUITETURA.md) | Fluxo implementado e interfaces planejadas |
 | [Dataset — PREP-02](docs/DATASET.md) | Origem, download, amostragem, análise e limitações dos dados |
-| [Registro de alterações](docs/REGISTRO_DE_ALTERACOES.md) | Autorizações, alterações e validações documentadas |
-| [Instruções do repositório](AGENTS.md) | Regras de orientação, execução e privacidade |
 
 ## Ambiente de desenvolvimento
 
@@ -100,22 +97,23 @@ Durante o setup, foram verificadas a consistência das dependências,
 as importações das bibliotecas e a disponibilidade de Ruff e pytest.
 A análise estática também passou.
 
-Essas verificações não validam o pipeline completo. A obtenção e a separação
-do dataset possuem testes isolados descritos abaixo; contratos de dados,
-treinamento, experimentos de drift e dashboard permanecem pendentes.
+As verificações anteriores cobriram a configuração e os testes isolados então
+disponíveis. O fluxo sintético preparação → validação → treinamento está
+coberto pelos testes atuais; simulação de lotes, detecção de drift e dashboard
+permanecem pendentes.
 
 ## Arquitetura e contratos
 
-A arquitetura definida para implementação é um pipeline local em lote:
-preparação e separação → validação de dados → treinamento e avaliação;
-em paralelo ao treino, a base reservada alimenta simulação → validação de
-lotes → predição → detecção. Lotes inválidos são bloqueados antes de chegar
-ao modelo. Todas as etapas exportam eventos e resultados para monitoramento.
+A arquitetura é um pipeline local em lote: preparação e separação → validação
+de dados → treinamento e avaliação, etapas implementadas; em paralelo ao treino,
+a base reservada deverá alimentar simulação → validação de lotes → predição →
+detecção. Lotes inválidos são bloqueados antes de chegar ao modelo. As etapas
+implementadas exportam eventos e resultados para monitoramento.
 
 O dashboard **Streamlit** foi escolhido para observabilidade, com eventos
 JSONL, métricas JSON e relatórios HTML do Evidently. MLflow não integra a
-arquitetura base. As métricas específicas e os limiares serão definidos pelo
-grupo durante a implementação.
+arquitetura base. As métricas específicas e os limiares de drift serão definidos
+antes da implementação da detecção.
 
 Os [contratos entre componentes](docs/ARQUITETURA.md) detalham o diagrama,
 os formatos CSV/JSON/JSONL, manifestos, argumentos futuros dos scripts,
@@ -123,10 +121,10 @@ estados de execução e artefatos produzidos por etapa. Dados de treino,
 validação e teste ficam separados da base e dos lotes de produção simulada;
 a referência de drift é congelada a partir das features de treino.
 
-Os scripts de obtenção/amostragem do dataset e de preparação e separação das
-partições estão implementados. Contratos Pandera, treinamento, simulação,
-detecção e dashboard ainda não estão implementados. A documentação de arquitetura
-não substitui as evidências funcionais nem a governança exigidas na entrega.
+Obtenção/amostragem, preparação, validação Pandera e treinamento baseline estão
+implementados. Simulação de lotes, predição, detecção de drift e dashboard
+continuam planejados. As métricas históricas desta documentação não foram
+reexecutadas como parte das correções do PR #32.
 
 ## Dataset — PREP-02
 
@@ -237,14 +235,12 @@ uv run pytest tests/test_preparacao.py -q
 ## Treinamento do modelo baseline — F1-02
 
 O componente [src/monitoramento/treinamento.py](src/monitoramento/treinamento.py)
-consome o manifesto da preparação, ajusta o pipeline no treino, seleciona pela
+consome o manifesto aprovado pela validação, ajusta o pipeline no treino, seleciona pela
 validação e avalia no teste, conforme os parâmetros de
 [configs/treinamento.json](configs/treinamento.json):
 
 ```powershell
-uv run python src/monitoramento/treinamento.py ^
-  --config configs/treinamento.json ^
-  --input-manifest reports/runs/<run_id_da_preparacao>/manifest.json
+uv run python src/monitoramento/treinamento.py --config configs/treinamento.json --input-manifest reports/runs/<run_id_da_validacao>/manifest.json
 ```
 
 | Artefato | Local |
@@ -259,18 +255,22 @@ Cada execução grava em diretórios novos e imutáveis. O `model_id` e o
 `reference_id` combinam a assinatura do treino com um sufixo da execução; assim,
 reexecuções e mudanças somente em validação/teste preservam as avaliações e
 manifestos anteriores. Se qualquer destino já existir, a execução falha antes
-de gravar modelo ou referência. A etapa aceita `--config`, `--input-manifest`, `--run-id` e
-`--output-dir`, exige um manifesto de `preparacao` com `status` de sucesso e
-confere o hash de cada partição de entrada. Encerra com código `0` (sucesso), `2`
-(dados rejeitados) ou `1` (erro técnico). O contrato completo está em
+de gravar modelo ou referência. A etapa aceita `--config`, `--input-manifest`,
+`--run-id` e `--output-dir`, exige um manifesto de `validacao` com qualidade
+aprovada, o mesmo `dataset_id` e `schema_version` configurados, e confere
+novamente hashes e colunas das três partições antes do treinamento.
+Preparação direta, validação rejeitada e hashes ou schemas divergentes
+bloqueiam a criação do modelo. Encerra com código `0` em sucesso e `1` para
+dependência rejeitada, incompatibilidade de artefatos ou erro técnico.
+O código `2` é usado pela etapa de validação para identificar lote reprovado.
+O contrato completo está em
 [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 Os conversores ficam em `monitoramento.preprocessamento`, módulo importável
 necessário para carregar o pipeline em outro processo com `src` no `PYTHONPATH`.
 O treinamento confere domínio binário 0/1 e rejeita ausências, infinitos e
-frações antes de converter o alvo. A integração da validação Pandera ainda não
-está incluída neste branch; o treinamento consome diretamente o manifesto da
-preparação.
+frações antes de converter o alvo. O treinamento consome o manifesto aprovado
+da validação Pandera.
 
 ```powershell
 uv run pytest tests/test_treinamento.py -q
@@ -300,6 +300,118 @@ degradação nos cenários de drift.
 
 A pasta models/ armazena os modelos gerados localmente. Seus arquivos
 não são versionados, exceto pelo .gitkeep.
+
+## Validação do contrato de qualidade — F1-03
+
+O componente [src/monitoramento/validacao.py](src/monitoramento/validacao.py)
+consome o manifesto de um produtor (`preparacao` ou `simulacao`), confere os
+hashes dos artefatos tabulares e aplica o contrato Pandera descrito em
+[configs/validacao.json](configs/validacao.json):
+
+```powershell
+uv run python src/monitoramento/validacao.py --config configs/validacao.json --input-manifest reports/runs/<run_id_do_produtor>/manifest.json
+```
+
+O perfil padrão `reference` exige o alvo e valida `train`, `validation` e
+`test`. Para validar um lote de produção sem alvo, use
+`--profile production`; ele seleciona o artefato `features`, preserva as
+colunas de identificador/cenário/lote e aplica as regras às features.
+
+```powershell
+uv run python src/monitoramento/validacao.py --config configs/validacao.json --profile production --input-manifest reports/runs/<run_id_da_simulacao>/manifest.json
+```
+
+| Artefato | Local |
+|---|---|
+| Relatório de qualidade | `reports/runs/<run_id>/quality.json` |
+| Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
+
+O contrato exige ao menos três regras rígidas e cobre identificador (formato),
+alvo (domínio `0`/`1`), campos obrigatórios não nulos, unicidade, faixas
+numéricas e domínios categóricos. Uma violação bloqueia o conjunto inteiro: o
+relatório registra `approved`, `checked_rows` e a lista de `violations` com
+`rule_id` e `count`, sem reescrever nem descartar registros. A etapa aceita
+`--config`, `--input-manifest`, `--run-id` e `--output-dir` e encerra com código
+`0` (aprovado), `2` (dados rejeitados) ou `1` (erro técnico). Valores nulos
+seguem a regra de obrigatoriedade de cada campo; texto presente que não possa
+ser convertido em número falha nas regras de faixa e domínio numérico. O contrato completo
+está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
+A execução real sobre o manifesto da preparação aprovou 90.000 linhas
+(60.000 treino, 20.000 validação e 10.000 teste), com `approved: true` e nenhuma
+violação registrada.
+
+```powershell
+uv run pytest tests/test_validacao.py -q
+```
+
+## Bloqueio de ingestão de dados inválidos — F1-04
+
+O componente
+[src/monitoramento/lote_invalido.py](src/monitoramento/lote_invalido.py) gera um
+lote propositalmente inválido a partir da base de simulação. Ele amostra um
+conjunto determinístico (semente fixa), divide em treino, validação e teste e
+injeta uma anomalia para cada tipo de regra do contrato, publicando o manifesto
+do produtor (`stage: simulacao`, `status: success`) junto do lote:
+
+```powershell
+uv run python src/monitoramento/lote_invalido.py --config configs/validacao.json --source data/analysis/lending_club_100k_v1/simulation_base.csv --size 600
+```
+
+| Partição | Regra exercitada | Anomalia injetada |
+|---|---|---|
+| train | `R_ID_FORMATO` | identificador fora do padrão `LC#######` |
+| train | `R_UNICO_record_id` | linha duplicada |
+| validation | `R_NAO_NULO_loan_amnt` | `loan_amnt` vazio |
+| validation | `R_FAIXA_loan_amnt` | `loan_amnt` acima do limite |
+| test | `R_CATEGORIA_term` | `term` fora do domínio |
+| test | `R_ALVO_DOMINIO` | `loan_status` fora de `0`/`1` |
+
+O lote e o manifesto são gravados em
+`data/analysis/<preparation_id>/lote-invalido/<batch_id>/` e
+`reports/runs/<run_id>/`, ambos ignorados pelo Git. Em seguida, a validação do
+lote comprova o bloqueio: o contrato reprova o conjunto inteiro e a etapa
+encerra com código `2` e `error_code: QUALIDADE_REPROVADA`, registrando cada
+regra violada por `rule_id`, sem aprovar nenhum artefato para consumo.
+
+Esta demonstração usa somente o perfil `reference`, com as partições
+`train`, `validation` e `test`. Configurações de produção (`features`) ou
+partições não suportadas são recusadas antes de iniciar a execução; o
+gerador não substitui o simulador de lotes de produção.
+
+O campo `target_contract` de `configs/validacao.json` declara a semântica do
+alvo da origem usada nesta demonstração e deve corresponder ao `target` da
+preparação que gerou essa base. O gerador confere a coluna e o domínio contra
+as regras de qualidade e publica esse contrato em `target` no manifesto,
+preservando o vínculo exigido pela validação e pelo treinamento.
+
+Por padrão, cada chamada gera novos identificadores de execução e lote.
+Se informar `--batch-id`, use um valor novo: um destino existente é recusado
+sem sobrescrever seus CSVs. O mesmo vale para `--output-dir`. Configuração
+inválida termina com código `1` antes de criar o diretório de execução.
+Falhas posteriores ao início, como origem ausente ou lote insuficiente,
+registram eventos e manifesto terminal com `status: failed` e `error_code`,
+sempre que a persistência estiver disponível. O manifesto é publicado após
+os demais arquivos da execução.
+
+```powershell
+uv run python src/monitoramento/validacao.py --config configs/validacao.json --input-manifest reports/runs/<run_id_do_lote>/manifest.json
+```
+
+Resultado real da demonstração (lote de 600 linhas, 601 após a duplicata):
+
+| rule_id | ocorrências |
+|---|---|
+| `R_ALVO_DOMINIO` | 1 |
+| `R_CATEGORIA_term` | 1 |
+| `R_FAIXA_loan_amnt` | 1 |
+| `R_ID_FORMATO` | 1 |
+| `R_NAO_NULO_loan_amnt` | 1 |
+| `R_UNICO_record_id` | 2 |
+
+```powershell
+uv run pytest tests/test_lote_invalido.py -q
+```
 
 ## Convenção de commits
 
@@ -343,14 +455,21 @@ Concluídos:
 - Treinamento e avaliação do modelo baseline de Credit Scoring (F1-02), com
   registro das métricas de classificação por partição, modelo persistido para
   inferência, referência congelada e testes em `tests/test_treinamento.py`.
+- Contrato de qualidade de dados com Pandera (F1-03), aplicado às partições de
+  treino, validação e teste a partir do manifesto da preparação, com relatório
+  `quality.json`, bloqueio do conjunto inteiro em caso de violação e testes em
+  `tests/test_validacao.py`. O manifesto registra também a semântica do alvo
+  propagada desde a preparação e exigida pelo treinamento.
+- Demonstração do bloqueio de ingestão de dados inválidos (F1-04), com geração
+  de lote com anomalias intencionais, reprovação pelo contrato
+  (`QUALIDADE_REPROVADA`) e testes em `tests/test_lote_invalido.py`.
 
 Pendentes:
 
 - Confirmação da licença de uso do dataset.
 - Fixação da versão remota do dataset e revisão das estatísticas anteriores
   para a amostra atual, conforme ressalvas em docs/DATASET.md.
-- Definição do schema de negócio e das regras rígidas de qualidade.
 - Definição dos cenários de drift da produção simulada.
-- Validação funcional integrada do pipeline com dados sintéticos, além dos
-  testes isolados de obtenção, de preparação do dataset e de treinamento.
+- Execução dos testes e Ruff no ambiente definido pelo `uv.lock` após estas
+  correções; métricas e resultados históricos não foram reexecutados.
 - Implementação das etapas restantes do pipeline (simulação, detecção, dashboard).

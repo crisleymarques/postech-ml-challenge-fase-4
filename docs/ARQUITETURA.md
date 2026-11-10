@@ -2,9 +2,18 @@
 
 ## Estado e escopo
 
-Este documento define a arquitetura e os contratos entre componentes do
-pipeline. Os componentes, comandos e arquivos de saída descritos aqui ainda
-não foram implementados nem validados funcionalmente.
+No escopo do PR #32 estão implementados a preparação e separação de dados
+(F1-01), o treinamento baseline (F1-02) e a validação Pandera antes do treino
+(F1-03). A simulação de lotes, predição, detecção de drift e dashboard seguem
+planejados e não devem ser tratados como comandos disponíveis. Testes sintéticos
+cobrem a integração preparação → validação → treinamento; resultados históricos
+do dataset real não foram reexecutados como parte do PR #32.
+
+O PR #33 acrescenta `lote_invalido.py` para demonstrar a rejeição pelo contrato
+de referência. Ele gera partições com seis anomalias intencionais a partir da
+base de simulação, preserva destinos existentes e registra falhas de execução.
+Aceita apenas `reference` com `train`, `validation` e `test`; a simulação de
+produção com artefato `features` continua fora desse componente.
 
 A arquitetura é um pipeline local em lote, com Python 3.12, uv, arquivos como
 interface e dashboard Streamlit. As dependências incluem pandas,
@@ -40,15 +49,15 @@ flowchart TD
     F --> HTML[Relatório HTML]
 ```
 
-| Componente futuro em `src/monitoramento/` | Responsabilidade | Consome | Produz |
+| Componente em `src/monitoramento/` | Estado e responsabilidade | Consome | Produz |
 | --- | --- | --- | --- |
-| `preparacao.py` | Ler a fonte autorizada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto de preparação |
-| `validacao.py` | Aplicar o contrato Pandera e bloquear o conjunto inteiro quando inválido | Manifesto do conjunto e versão do contrato | Relatório de qualidade e manifesto de aprovação ou rejeição |
-| `treinamento.py` | Ajustar pré-processamento e classificador no treino; selecionar pela validação; avaliar no teste após seleção | Partições aprovadas e configuração do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
-| `simulacao.py` | Produzir lotes independentes, com cenário de controle e mudanças configuradas | Base de simulação, cenário e seed | Lotes por período e manifesto de cada cenário |
-| `predicao.py` | Aplicar o mesmo pipeline do treinamento | Lote aprovado e manifesto do modelo | Predições e manifesto com vínculos ao modelo e lote |
-| `deteccao.py` | Comparar referência e lote com Evidently; avaliar desempenho somente com rótulos compatíveis | Referência, lote aprovado, predições e configuração de detecção | Resultados estatísticos, alertas e HTML |
-| `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
+| `preparacao.py` | Implementado: ler a fonte configurada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto com contrato semântico do alvo |
+| `validacao.py` | Implementado: aplicar contrato Pandera e bloquear conjunto inválido | Manifesto do produtor e contrato de qualidade | Relatório de qualidade e manifesto de aprovação ou rejeição |
+| `treinamento.py` | Implementado: ajustar no treino, selecionar na validação e avaliar no teste | Partições aprovadas e contrato do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
+| Simulação | Planejado: produzir lotes independentes e mudanças configuradas | Base de simulação, cenário e seed | Lotes por período e manifesto de cada cenário |
+| Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
+| Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
+| Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
 aprende imputação, escalas, codificações ou seleção de variáveis a partir do
@@ -67,10 +76,10 @@ falhar e registrar o erro, sem gerar aprovação implícita.
 | Produção simulada | `data/analysis/<scenario_id>/<batch_id>/features.csv` | Validação, predição e comparação com a referência |
 | Rótulos de produção, quando disponíveis | `data/analysis/<scenario_id>/<batch_id>/labels.csv` | Avaliação posterior; não entram como features |
 
-As quatro partições devem ser disjuntas. Estratégia de divisão, proporções,
-estratificação, agrupamento ou corte temporal dependem do dataset e da decisão
-da equipe. Sua configuração e seed devem constar no manifesto. Nenhuma
-proporção está definida.
+As quatro partições devem ser disjuntas. A configuração atual usa corte
+temporal por `issue_d`, seed 42 e proporções 60% treino, 20% validação, 10%
+teste e 10% base de simulação; esses valores são configuráveis e registrados
+no manifesto de preparação.
 
 O alvo não participa dos testes de drift das features. Identificadores de
 linha servem somente ao alinhamento, não ao ajuste do modelo ou à detecção.
@@ -101,10 +110,10 @@ mudam, evitando sobrescrita nos caminhos de dados e modelos.
 - `record_id` é uma string técnica única, criada antes da separação e
   preservada nos cenários. Duplicidade entre períodos deve ser distinguida
   pelo `batch_id`; o alinhamento usa o par `batch_id`, `record_id`.
-- O contrato de negócio define nomes, ordem e tipos de features, alvo,
-  classe positiva, categorias e regras. Esses itens permanecem pendentes.
-  Schema incompatível bloqueia o consumo; não se renomeiam ou descartam
-  colunas silenciosamente.
+- A configuração atual define features, alvo, classes e regras de qualidade
+  para o Lending Club. O contrato de deriva e os schemas dos lotes simulados
+  permanecem pendentes. Schema incompatível bloqueia o consumo; colunas não
+  são renomeadas ou descartadas silenciosamente.
 - Cada etapa referencia `config.json` com os parâmetros efetivos e seed
   quando aplicável. Configurações e logs não contêm credenciais ou registros.
 - Saídas são gravadas em diretório novo por execução. O manifesto terminal
@@ -126,7 +135,7 @@ Cada etapa produz `reports/runs/<run_id>/manifest.json`. Campos obrigatórios:
 | `inputs` | Lista de objetos com `artifact_type`, `path`, `sha256` e `producer_run_id`; este último pode ser nulo para a origem externa |
 | `outputs` | Lista com a mesma estrutura; `producer_run_id` é a execução atual |
 | `dataset_id` | String ou nulo para etapa sem um único conjunto |
-| `schema_version` | String ou nulo antes da definição do schema de negócio |
+| `schema_version` | String ou nulo quando não aplicável; obrigatório na aprovação de qualidade e no treino |
 | `model_id`, `reference_id`, `scenario_id`, `batch_id` | Strings ou nulos quando não aplicáveis |
 | `error_code` | String técnica sanitizada; nulo em sucesso |
 
@@ -136,11 +145,18 @@ a aprovação de qualidade vale para aquele hash e `schema_version`.
 Mudanças incompatíveis exigem aumento da versão principal do contrato.
 Consumidores rejeitam versões principais desconhecidas.
 
-O manifesto da validação mantém o CSV verificado em `inputs` e publica o
-relatório de qualidade em `outputs`; não duplica nem reescreve o dataset.
-O consumidor resolve o CSV pelo manifesto aprovado e confere novamente o
-hash. `schema_version` é obrigatoriamente não nulo para aprovação de dados
-e para as etapas que consomem dados aprovados.
+O manifesto da preparação registra a coluna, os nomes das classes e os valores
+binários atribuídos a cada classe. A validação de referência propaga esse
+contrato; o treinamento exige igualdade com a configuração antes de ajustar o
+modelo. Ausência ou divergência bloqueia o treino.
+
+O manifesto da validação mantém os CSVs verificados em `inputs` e publica o
+relatório de qualidade em `outputs`; não duplica nem reescreve o dataset. O
+resumo `quality` liga a aprovação ao `dataset_id`, `schema_version`, tipo e hash
+de cada CSV. O treinamento só resolve as partições pelo manifesto de validação,
+confere esse vínculo e recalcula seus hashes e colunas antes de ajustar o modelo.
+`schema_version` é obrigatoriamente não nulo para aprovação de dados e para as
+etapas que consomem dados aprovados.
 
 Uma etapa dependente exige `success` no produtor e verifica existência,
 hash, schema e IDs compatíveis antes de consumir. Resultados parciais de
@@ -149,22 +165,31 @@ geram evento `skipped`, sem predições ou métricas de desempenho fictícias.
 
 ### Interface dos scripts
 
-Na implementação, cada módulo de processamento deverá aceitar:
+As etapas implementadas aceitam estes argumentos; os módulos futuros ainda
+podem definir interfaces específicas:
 
 | Argumento | Contrato |
 | --- | --- |
 | `--config` | Caminho do JSON de configuração da etapa |
-| `--input-manifest` | Caminho de manifesto de entrada; repetível para múltiplas dependências |
+| `--input-manifest` | Caminho do manifesto de entrada; uma entrada nas etapas atuais |
 | `--run-id` | Identificador novo da execução |
 | `--output-dir` | Diretório novo `reports/runs/<run_id>/` |
 
 Na preparação, o arquivo de origem é indicado em `--config`; não há
-manifesto produtor para essa origem. Os manifestos das partições aprovadas
-são passados ao treinamento. A configuração identifica o papel de cada
-entrada pelo `dataset_id`, sem depender da ordem dos argumentos.
+manifesto produtor para essa origem. O manifesto da preparação é passado à
+validação. Somente o manifesto de validação com `quality.approved: true` pode
+ser passado ao treinamento. A configuração identifica o papel de cada entrada
+pelo `dataset_id` e `schema_version`, sem depender da ordem dos argumentos.
 
-Código de saída: `0` para sucesso, `2` para rejeição de qualidade e `1` para
-erro técnico, configuração inválida ou incompatibilidade de artefatos.
+A validação tem os perfis `reference` e `production`. `reference` exige o alvo
+e valida as partições de treino, validação e teste. `production` seleciona o
+artefato `features` e não exige alvo, mantendo identificadores e colunas de
+cenário/lote do CSV sem reescrevê-lo.
+
+Código de saída: a validação retorna `0` para aprovação, `2` para rejeição de
+qualidade e `1` para erro técnico ou incompatibilidade. Preparação usa `0`, `2`
+e `1` para sucesso, rejeição de dados e erro técnico. Treinamento usa `0` em
+sucesso e `1` para erro ou dependência incompatível.
 O executor futuro registra etapas dependentes como `skipped` quando uma
 dependência não tiver sucesso. Um alerta de drift não é erro de execução:
 uma detecção concluída com alerta termina em `success`.
@@ -275,27 +300,27 @@ de relatório podem incluir valores e categorias do dataset. O dashboard
 prioriza resultados agregados e referências a artefatos locais.
 O prazo de retenção e a revisão de privacidade permanecem na governança.
 
-## Artefatos, persistência e implementação futura
+## Artefatos, persistência e etapas planejadas
 
-Os caminhos são contratos planejados; os diretórios de execução, datasets
-e modelos serão gerados pelos componentes do pipeline. Dados ficam em
+Preparação, validação e treinamento já geram seus diretórios e artefatos.
+Simulação, predição, detecção e dashboard ainda são planejados. Dados ficam em
 `data/reference/` e `data/analysis/`, e modelos em `models/`, conforme as
 exclusões atuais.
 `reports/` não possui exclusão geral no setup: logs, configurações e relatórios
 não devem ser publicados automaticamente. A equipe deve revisar seu conteúdo
 e definir retenção e eventual exclusão antes de produzi-los ou compartilhá-los.
 
-Nenhuma etapa usa bancos de dados. A execução local futura será documentada
-quando os módulos existirem. Automação, API de serving, nuvem e retreinamento
-automático exigem decisão posterior de escopo.
+Nenhuma etapa implementada usa bancos de dados. Automação, API de serving,
+nuvem e retreinamento automático exigem decisão posterior de escopo.
 
 ## Definições pendentes e validação funcional
 
-Pendências para implementação: dataset e licença; schema de negócio;
-estratégia de separação; algoritmo; métricas operacionais e de classificação;
-três ou mais regras de qualidade; cenários e rótulos; testes estatísticos,
-limiares e janelas; governança e retenção. Esses itens não impedem a definição
-das interfaces, mas impedem tratar o pipeline como pronto para execução.
+Pendências: confirmar a licença e fixar a versão remota do dataset; definir
+cenários e disponibilidade de rótulos; escolher métricas e limiares de drift;
+implementar simulação, predição, detecção e dashboard; definir governança e
+retenção. A integração sintética existente cobre preparação, validação e
+treinamento. O fluxo de produção simulada ainda não foi validado porque as
+etapas consumidoras não estão implementadas.
 
 A validação funcional do pipeline deverá demonstrar aprovação de dados
 válidos, rejeição do lote inválido, isolamento das partições, alinhamento
