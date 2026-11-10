@@ -90,13 +90,42 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
     with caminho.open(encoding="utf-8") as arquivo:
         config = json.load(arquivo)
 
+    if not isinstance(config, dict):
+        raise ValueError("A configuracao deve ser um objeto JSON.")
     if versao_maior(config.get("contract_version")) != versao_maior(CONTRACT_VERSION):
         raise ValueError("Versao principal do contrato da configuracao incompativel.")
 
-    obrigatorios = ("dataset_id", "schema_version", "artifacts")
+    obrigatorios = ("dataset_id", "schema_version", "artifacts", "rules", "target_contract")
     ausentes = [chave for chave in obrigatorios if not config.get(chave)]
     if ausentes:
         raise ValueError(f"Chaves ausentes na configuracao: {ausentes}")
+    if config.get("profile") != "reference":
+        raise ValueError("O gerador aceita somente profile 'reference'.")
+    artifacts = config["artifacts"]
+    if (
+        not isinstance(artifacts, list)
+        or any(not isinstance(nome, str) for nome in artifacts)
+        or len(artifacts) != len(set(artifacts))
+        or tuple(artifacts) != PARTICOES
+    ):
+        raise ValueError("artifacts deve conter exatamente train, validation e test, nessa ordem.")
+    target = config["target_contract"]
+    regra_alvo = config["rules"].get("target", {}) if isinstance(config["rules"], dict) else {}
+    if (
+        not isinstance(target, dict)
+        or not isinstance(regra_alvo, dict)
+        or target.get("column") != regra_alvo.get("column")
+        or {str(target.get("positive_value")), str(target.get("negative_value"))}
+        != {str(valor) for valor in regra_alvo.get("domain", [])}
+        or not isinstance(target.get("positive_class"), str)
+        or not target["positive_class"].strip()
+        or not isinstance(target.get("negative_class"), str)
+        or not target["negative_class"].strip()
+        or target["positive_class"] == target["negative_class"]
+        or type(target.get("positive_value")) is not int
+        or type(target.get("negative_value")) is not int
+    ):
+        raise ValueError("target_contract incompativel com rules.target.")
     return config
 
 
@@ -167,7 +196,7 @@ def aplicar_anomalias(
 
 def escrever_particoes(destino: Path, particoes: dict[str, pd.DataFrame]) -> dict[str, Path]:
     """Grava as particoes do lote em CSV."""
-    destino.mkdir(parents=True, exist_ok=True)
+    destino.mkdir(parents=True, exist_ok=False)
     caminhos: dict[str, Path] = {}
     for nome, base in particoes.items():
         caminho = destino / f"{nome}.csv"
@@ -230,20 +259,22 @@ def montar_manifesto(
     config_path: Path,
     config: dict[str, Any],
     batch_id: str,
-    entrada: dict[str, Any],
+    entrada: dict[str, Any] | None,
     saidas: list[dict[str, Any]],
     anomalias: list[dict[str, Any]],
+    status: str = "success",
+    error_code: str | None = None,
 ) -> dict[str, Any]:
     """Reune o manifesto comum do produtor do lote invalido."""
     return {
         "contract_version": CONTRACT_VERSION,
         "run_id": run_id,
         "stage": STAGE,
-        "status": "success",
+        "status": status,
         "started_at": iniciado,
         "finished_at": finalizado,
         "config_path": config_path.as_posix(),
-        "inputs": [entrada],
+        "inputs": [entrada] if entrada else [],
         "outputs": saidas,
         "dataset_id": config.get("dataset_id"),
         "schema_version": config.get("schema_version"),
@@ -255,7 +286,7 @@ def montar_manifesto(
         "transformacoes": ["injecao de anomalias intencionais"],
         "variaveis_alteradas": sorted({item["column"] for item in anomalias}),
         "anomalies": anomalias,
-        "error_code": None,
+        "error_code": error_code,
     }
 
 
@@ -296,24 +327,35 @@ def gerar(
     seed: int,
 ) -> int:
     """Gera o lote invalido e publica manifesto, eventos e metricas."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    iniciado = agora_iso()
-    eventos: list[dict[str, Any]] = []
-
     try:
         config = carregar_config(config_path)
-        config["_seed"] = seed
-        dataset_id = config["dataset_id"]
-        registrar_evento(eventos, run_id, dataset_id, "started", "INFO", batch_id)
-
+    except (ErroLote, ValueError, TypeError, OSError) as erro:
+        print(f"Configuracao invalida: {erro}")
+        return CODIGO_ERRO
+    if output_dir.exists():
+        print(f"Diretorio de execucao ja existe: {output_dir}")
+        return CODIGO_ERRO
+    try:
+        output_dir.mkdir(parents=True, exist_ok=False)
+    except OSError as erro:
+        print(f"Falha ao reservar diretorio de execucao: {erro}")
+        return CODIGO_ERRO
+    iniciado = agora_iso()
+    eventos: list[dict[str, Any]] = []
+    config["_seed"] = seed
+    dataset_id = str(config.get("dataset_id", "desconhecido"))
+    registrar_evento(eventos, run_id, dataset_id, "started", "INFO", batch_id)
+    error_code: str | None = None
+    try:
         base = carregar_base(source_path)
+        target_contract = config["target_contract"]
         particoes = list(config["artifacts"])
         fatias = dividir_lote(base, tuple(particoes), total, seed)
 
         ajustadas: dict[str, pd.DataFrame] = {}
         anomalias: list[dict[str, Any]] = []
         for nome in particoes:
-            ajustada, descritas = aplicar_anomalias(fatias[nome], ANOMALIAS.get(nome, ()))
+            ajustada, descritas = aplicar_anomalias(fatias[nome], ANOMALIAS[nome])
             ajustadas[nome] = ajustada
             for item in descritas:
                 anomalias.append({"artifact_type": nome, **item})
@@ -325,6 +367,7 @@ def gerar(
             "artifact_type": "origem",
             "path": source_path.as_posix(),
             "sha256": sha256_arquivo(source_path),
+            "producer_run_id": None,
             "row_count": int(len(base)),
             "columns": list(base.columns),
         }
@@ -332,29 +375,60 @@ def gerar(
             descritor_artefato(nome, caminhos[nome], run_id, ajustadas[nome]) for nome in particoes
         ]
 
-        escrever_json(output_dir / "config.json", config)
-        escrever_eventos(output_dir / "events.jsonl", eventos)
         manifesto_saida = {
             "run_id": run_id,
             "measurements": montar_medidas(saidas, anomalias),
         }
+        registrar_evento(eventos, run_id, dataset_id, "completed", "INFO", batch_id)
+        escrever_json(output_dir / "config.json", config)
+        escrever_eventos(output_dir / "events.jsonl", eventos)
         escrever_json(output_dir / "metrics.json", manifesto_saida)
         manifesto = montar_manifesto(
             run_id=run_id,
             iniciado=iniciado,
             finalizado=agora_iso(),
-            config_path=config_path,
+            config_path=output_dir / "config.json",
             config=config,
             batch_id=batch_id,
             entrada=entrada,
             saidas=saidas,
             anomalias=anomalias,
         )
+        manifesto["target"] = target_contract
         escrever_json(output_dir / "manifest.json", manifesto)
-        registrar_evento(eventos, run_id, dataset_id, "completed", "INFO", batch_id)
-        escrever_eventos(output_dir / "events.jsonl", eventos)
-    except (ErroLote, ValueError) as erro:
-        print(f"Falha ao gerar o lote: {erro}")
+    except Exception as erro:
+        # Os artefatos operacionais registram apenas a classe/codigo, nunca dados da origem.
+        if eventos[-1]["event"] == "completed":
+            eventos.pop()
+        error_code = (
+            "ERRO_ENTRADA"
+            if isinstance(erro, (ErroLote, ValueError, pd.errors.ParserError, FileNotFoundError))
+            else "ERRO_TECNICO"
+        )
+        registrar_evento(eventos, run_id, dataset_id, "failed", "ERROR", batch_id, error_code)
+        try:
+            config_path_efetiva = output_dir / "config.json"
+            escrever_json(config_path_efetiva, config)
+            escrever_eventos(output_dir / "events.jsonl", eventos)
+            escrever_json(output_dir / "metrics.json", {"run_id": run_id, "measurements": []})
+            manifesto = montar_manifesto(
+                run_id=run_id,
+                iniciado=iniciado,
+                finalizado=agora_iso(),
+                config_path=config_path_efetiva,
+                config=config,
+                batch_id=batch_id,
+                entrada=None,
+                saidas=[],
+                anomalias=[],
+                status="failed",
+                error_code=error_code,
+            )
+            escrever_json(output_dir / "manifest.json", manifesto)
+        except OSError as persist_erro:
+            print(f"Falha ao persistir resultado de erro ({type(persist_erro).__name__}).")
+            return CODIGO_ERRO
+        print(f"Falha ao gerar o lote ({error_code}): {type(erro).__name__}")
         return CODIGO_ERRO
 
     print(f"Lote invalido gerado: {sum(len(f) for f in ajustadas.values())} linhas")

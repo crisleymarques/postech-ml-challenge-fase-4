@@ -1,7 +1,7 @@
 """Treinamento e avaliacao do modelo baseline de Credit Scoring (issue F1-02).
 
-Le as particoes de treino, validacao e teste declaradas no manifesto da
-preparacao, confere os hashes dos artefatos, ajusta o pre-processamento e o
+Le as particoes de treino, validacao e teste aprovadas no manifesto da
+validacao, confere hashes e schema efetivo dos artefatos, ajusta o pre-processamento e o
 classificador apenas no treino, seleciona pela validacao e avalia no teste
 depois da selecao. Persiste o pipeline, os metadados, a avaliacao e a
 referencia congelada das features de treino.
@@ -25,6 +25,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Permite executar o arquivo diretamente na raiz do repositório, como no README.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -42,9 +45,11 @@ from sklearn.metrics import (
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 
+from monitoramento.preprocessamento import converter_categoricas, converter_numericas
+
 CONTRACT_VERSION = "1.0"
 STAGE = "treinamento"
-ETAPA_PRODUTORA = "preparacao"
+ETAPA_PRODUTORA = "validacao"
 
 CODIGO_SUCESSO = 0
 CODIGO_ERRO = 1
@@ -106,7 +111,16 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
     if versao_maior(config.get("contract_version")) != versao_maior(CONTRACT_VERSION):
         raise ValueError("Versao principal do contrato da configuracao incompativel.")
 
-    obrigatorios = ("dataset_id", "model_id", "seed", "target", "features", "model", "outputs")
+    obrigatorios = (
+        "dataset_id",
+        "schema_version",
+        "model_id",
+        "seed",
+        "target",
+        "features",
+        "model",
+        "outputs",
+    )
     ausentes = [chave for chave in obrigatorios if chave not in config]
     if ausentes:
         raise ValueError(f"Chaves ausentes na configuracao: {ausentes}")
@@ -134,14 +148,20 @@ def carregar_manifesto(caminho: Path) -> dict[str, Any]:
         raise ValueError(f"Etapa produtora inesperada: {manifesto.get('stage')}")
     if manifesto.get("status") != "success":
         raise ValueError(f"Dependencia sem sucesso: {manifesto.get('status')}")
+    if manifesto.get("quality", {}).get("approved") is not True:
+        raise ValueError("Manifesto de validacao sem aprovacao de qualidade.")
+    if not manifesto.get("schema_version"):
+        raise ValueError("Manifesto de validacao sem schema_version.")
     return manifesto
 
 
-def resolver_particoes(manifesto: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Resolve e verifica as particoes declaradas no manifesto produtor."""
+def resolver_particoes(
+    manifesto: dict[str, Any], config: dict[str, Any] | None = None
+) -> dict[str, dict[str, Any]]:
+    """Resolve particoes aprovadas, verificando hash e colunas do modelo."""
     artefatos = {
         item.get("artifact_type"): item
-        for item in manifesto.get("outputs", [])
+        for item in manifesto.get("inputs", [])
         if item.get("artifact_type") in PARTICOES_ENTRADA
     }
     faltantes = [nome for nome in PARTICOES_ENTRADA if nome not in artefatos]
@@ -155,23 +175,71 @@ def resolver_particoes(manifesto: dict[str, Any]) -> dict[str, dict[str, Any]]:
             raise ErroArtefato(f"Arquivo da particao ausente: {caminho}")
         if sha256_arquivo(caminho) != artefato.get("sha256"):
             raise ErroArtefato(f"Hash divergente para a particao {nome}.")
+        colunas_arquivo = pd.read_csv(caminho, nrows=0).columns.tolist()
+        colunas_manifesto = artefato.get("columns")
+        if colunas_manifesto != colunas_arquivo:
+            raise ErroArtefato(f"Schema efetivo divergente para a particao {nome}.")
+        if config is not None:
+            features = list(config["features"]["numeric"]) + list(
+                config["features"]["categorical"]
+            )
+            necessarias = {*features, config["features"].get("identifier", IDENTIFICADOR)}
+            necessarias.add(config["target"]["column"])
+            colunas = set(colunas_arquivo)
+            if not necessarias.issubset(colunas):
+                raise ErroArtefato(
+                    f"Schema da particao {nome} incompativel; colunas ausentes: "
+                    f"{sorted(necessarias - colunas)}"
+                )
     return artefatos
+
+
+def validar_barreira(manifesto: dict[str, Any], config: dict[str, Any]) -> None:
+    """Confere o vinculo da aprovacao com dataset, schema e entradas efetivas."""
+    qualidade = manifesto.get("quality")
+    if versao_maior(manifesto.get("contract_version")) != versao_maior(CONTRACT_VERSION):
+        raise ErroArtefato("Versao principal do manifesto de validacao incompativel.")
+    if manifesto.get("stage") != ETAPA_PRODUTORA:
+        raise ErroArtefato(f"Etapa produtora inesperada: {manifesto.get('stage')}")
+    if manifesto.get("status") != "success" or not isinstance(qualidade, dict):
+        raise ErroArtefato("Treinamento exige manifesto de validacao concluido.")
+    if qualidade.get("approved") is not True:
+        raise ErroArtefato("Treinamento bloqueado: qualidade dos dados nao aprovada.")
+    if manifesto.get("dataset_id") != config["dataset_id"]:
+        raise ErroArtefato("dataset_id divergente entre configuracao e manifesto de validacao.")
+    if qualidade.get("dataset_id") != config["dataset_id"]:
+        raise ErroArtefato("dataset_id divergente no relatorio de qualidade.")
+    schema_version = config["schema_version"]
+    if not schema_version or manifesto.get("schema_version") != schema_version:
+        raise ErroArtefato("schema_version divergente ou ausente no manifesto de validacao.")
+    if qualidade.get("schema_version") != schema_version:
+        raise ErroArtefato("schema_version divergente no relatorio de qualidade.")
+    target_contract = manifesto.get("target_contract")
+    target_esperado = config.get("target")
+    if not isinstance(target_contract, dict):
+        raise ErroArtefato("Manifesto de validacao sem contrato semantico do alvo.")
+    campos_alvo = ("column", "positive_class", "negative_class", "positive_value", "negative_value")
+    if not isinstance(target_esperado, dict) or any(
+        target_contract.get(campo) != target_esperado.get(campo) for campo in campos_alvo
+    ):
+        raise ErroArtefato("Contrato semantico do alvo divergente entre validacao e treinamento.")
+    por_tipo = {item.get("artifact_type"): item for item in qualidade.get("artifacts", [])}
+    for item in manifesto.get("inputs", []):
+        aprovado = por_tipo.get(item.get("artifact_type"))
+        if (
+            aprovado is None
+            or aprovado.get("approved") is not True
+            or aprovado.get("sha256") != item.get("sha256")
+        ):
+            raise ErroArtefato(
+                f"Aprovacao de qualidade nao corresponde a entrada {item.get('artifact_type')}."
+            )
 
 
 def ler_particao(caminho: Path) -> pd.DataFrame:
     """Le uma particao como texto e trata campo vazio como ausencia."""
     base = pd.read_csv(caminho, dtype=str, na_filter=False)
     return base.replace("", np.nan)
-
-
-def converter_numericas(tabela: Any) -> Any:
-    """Converte valores textuais em numericos; vazios ou invalidos viram ausentes."""
-    return pd.DataFrame(tabela).apply(pd.to_numeric, errors="coerce").to_numpy()
-
-
-def converter_categoricas(tabela: Any) -> Any:
-    """Trata campo vazio como ausencia antes da imputacao categorica."""
-    return pd.DataFrame(tabela).replace("", np.nan).to_numpy()
 
 
 def selecionar_features(config: dict[str, Any], base: pd.DataFrame) -> tuple[list[str], list[str]]:
@@ -206,11 +274,15 @@ def alvo_numerico(base: pd.DataFrame, config: dict[str, Any]) -> pd.Series:
     if coluna not in base.columns:
         raise ErroArtefato(f"Coluna alvo ausente: {coluna}")
 
-    valores = pd.to_numeric(base[coluna], errors="raise").astype(int)
-    esperados = {
-        int(config["target"]["positive_value"]),
-        int(config["target"]["negative_value"]),
-    }
+    valores_originais = pd.to_numeric(base[coluna], errors="raise")
+    if valores_originais.isna().any() or not np.isfinite(valores_originais.to_numpy()).all():
+        raise ErroArtefato("Rotulos de alvo ausentes ou nao finitos.")
+    if not np.equal(valores_originais, np.floor(valores_originais)).all():
+        raise ErroArtefato("Rotulos de alvo devem ser inteiros; truncamento nao e permitido.")
+    if (config["target"]["positive_value"], config["target"]["negative_value"]) != (1, 0):
+        raise ValueError("O treinamento suporta positive_value=1 e negative_value=0.")
+    esperados = {0, 1}
+    valores = valores_originais.astype(int)
     inesperados = sorted(set(valores.unique()) - esperados)
     if inesperados:
         raise ErroArtefato(f"Rotulos de alvo inesperados: {inesperados}")
@@ -359,7 +431,7 @@ def persistir_modelo(
     """Grava pipeline, metadados e avaliacao e devolve os artefatos gerados."""
     features = numericas + categoricas
     diretorio = Path(config["outputs"]["models_dir"]) / model_id
-    diretorio.mkdir(parents=True, exist_ok=True)
+    diretorio.mkdir(parents=True, exist_ok=False)
 
     joblib.dump(modelo, diretorio / "pipeline.pkl")
 
@@ -379,6 +451,7 @@ def persistir_modelo(
             "model_id": model_id,
             "reference_id": reference_id,
             "dataset_id": config["dataset_id"],
+            "schema_version": config["schema_version"],
             "algorithm": config["model"]["algorithm"],
             "hyperparameters": config["model"]["params"],
             "target": config["target"],
@@ -400,6 +473,7 @@ def persistir_modelo(
                 }
                 for nome in PARTICOES_ENTRADA
             },
+            "quality_validation_run_id": artefatos["train"].get("validated_by_run_id"),
         },
     )
     escrever_json(
@@ -440,7 +514,7 @@ def persistir_referencia(
         raise ErroArtefato(f"Identificador ausente na particao de treino: {identificador}")
 
     diretorio = Path(config["outputs"]["reference_dir"]) / reference_id
-    diretorio.mkdir(parents=True, exist_ok=True)
+    diretorio.mkdir(parents=True, exist_ok=False)
     conteudo = particao_treino[[identificador, *features]]
     caminho = diretorio / "features.csv"
     conteudo.to_csv(caminho, index=False, encoding="utf-8")
@@ -510,7 +584,7 @@ def montar_manifesto(
         "inputs": entradas,
         "outputs": saidas,
         "dataset_id": config.get("dataset_id"),
-        "schema_version": None,
+        "schema_version": config.get("schema_version"),
         "model_id": model_id,
         "reference_id": reference_id,
         "scenario_id": None,
@@ -544,10 +618,11 @@ def processar(
     selecao: dict[str, Any] | None = None
 
     try:
-        if manifesto.get("dataset_id") != config["dataset_id"]:
-            raise ErroArtefato("dataset_id divergente entre configuracao e manifesto.")
+        validar_barreira(manifesto, config)
 
-        artefatos = resolver_particoes(manifesto)
+        artefatos = resolver_particoes(manifesto, config)
+        for artefato in artefatos.values():
+            artefato["validated_by_run_id"] = manifesto["run_id"]
         particoes = {
             nome: ler_particao(Path(artefatos[nome]["path"])) for nome in PARTICOES_ENTRADA
         }
@@ -558,8 +633,22 @@ def processar(
         assinatura = calcular_assinatura(
             config, numericas, categoricas, artefatos["train"]["sha256"]
         )
-        model_id = f"{config['model_id']}-{assinatura[:8]}"
-        reference_id = f"ref-{assinatura[:8]}"
+        # Cada execução publica artefatos imutáveis, mesmo quando os dados e a
+        # configuração são idênticos. O sufixo também evita reuso da avaliação
+        # quando apenas validação/teste mudam.
+        sufixo_execucao = hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:8]
+        model_id = f"{config['model_id']}-{assinatura[:8]}-{sufixo_execucao}"
+        reference_id = f"ref-{assinatura[:8]}-{sufixo_execucao}"
+
+        diretorio_modelo = Path(config["outputs"]["models_dir"]) / model_id
+        diretorio_referencia = Path(config["outputs"]["reference_dir"]) / reference_id
+        conflitos = [
+            caminho.as_posix()
+            for caminho in (diretorio_modelo, diretorio_referencia)
+            if caminho.exists()
+        ]
+        if conflitos:
+            raise ErroArtefato(f"Destinos imutaveis ja existem: {conflitos}")
 
         modelo = construir_pipeline(numericas, categoricas, config)
         modelo.fit(particoes["train"][features], alvo_numerico(particoes["train"], config))
@@ -603,6 +692,7 @@ def processar(
                 "path": artefatos[nome]["path"],
                 "sha256": artefatos[nome]["sha256"],
                 "producer_run_id": artefatos[nome].get("producer_run_id"),
+                "validated_by_run_id": manifesto.get("run_id"),
                 "row_count": artefatos[nome].get("row_count"),
                 "columns": artefatos[nome].get("columns"),
             }
@@ -750,14 +840,14 @@ def main() -> None:
         type=Path,
         action="append",
         required=True,
-        help="Manifesto da preparacao com as particoes de treino, validacao e teste.",
+        help="Manifesto aprovado da validacao com particoes de treino, validacao e teste.",
     )
     parser.add_argument("--run-id", default=None, help="Identificador unico da execucao.")
     parser.add_argument("--output-dir", type=Path, default=None, help="Diretorio novo da execucao.")
     args = parser.parse_args()
 
     if len(args.input_manifest) != 1:
-        parser.error("O treinamento consome exatamente um manifesto da preparacao.")
+        parser.error("O treinamento consome exatamente um manifesto da validacao.")
 
     run_id = args.run_id or datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%S%fZ")
     output_dir = args.output_dir or Path("reports/runs") / run_id

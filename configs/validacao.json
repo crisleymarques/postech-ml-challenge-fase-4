@@ -1,6 +1,14 @@
 {
   "contract_version": "1.0",
   "stage": "validacao",
+  "profile": "reference",
+  "target_contract": {
+    "column": "loan_status",
+    "positive_class": "Charged Off",
+    "negative_class": "Fully Paid",
+    "positive_value": 1,
+    "negative_value": 0
+  },
   "dataset_id": "lending_club_100k",
   "schema_version": "1.0",
   "artifacts": ["train", "validation", "test"],
