@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -204,6 +207,13 @@ def test_alvo_numerico_rejeita_rotulo_inesperado() -> None:
 
     with pytest.raises(treino.ErroArtefato):
         treino.alvo_numerico(base, config)
+
+
+@pytest.mark.parametrize("rotulos", [["0.9", "1.9"], ["0", "inf"], ["0", "2"]])
+def test_alvo_numerico_rejeita_valores_nao_binarios_sem_truncar(rotulos: list[str]) -> None:
+    config = montar_config(Path("."))
+    with pytest.raises((treino.ErroArtefato, ValueError)):
+        treino.alvo_numerico(pd.DataFrame({"loan_status": rotulos}), config)
 
 
 def test_pipeline_ajusta_e_prediz_probabilidades() -> None:
@@ -420,3 +430,91 @@ def test_barreira_bloqueia_manifiestos_sem_aprovacao_vinculada(
 
     assert codigo == treino.CODIGO_ERRO
     assert not list(Path(config["outputs"]["models_dir"]).glob("*"))
+
+
+def test_cli_serializa_pipeline_carregavel_em_outro_processo(tmp_path: Path) -> None:
+    config = montar_config(tmp_path)
+    escrever_particoes(tmp_path)
+    manifesto = escrever_manifesto(tmp_path, config)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    output = tmp_path / "runs" / "cli-run"
+    raiz = Path(__file__).resolve().parents[1]
+    script = raiz / "src/monitoramento/treinamento.py"
+
+    resultado = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--config",
+            str(config_path),
+            "--input-manifest",
+            str(manifesto),
+            "--run-id",
+            "cli-run",
+            "--output-dir",
+            str(output),
+        ],
+        cwd=raiz,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert resultado.returncode == 0, resultado.stdout + resultado.stderr
+    model_id = json.loads((output / "manifest.json").read_text(encoding="utf-8"))["model_id"]
+    pipeline = tmp_path / "models" / model_id / "pipeline.pkl"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(raiz / "src"), *filter(None, [os.environ.get("PYTHONPATH")])]
+    )
+    carregar = subprocess.run(
+        [sys.executable, "-c", (
+            "import joblib, pandas as pd, sys; "
+            "m=joblib.load(sys.argv[1]); "
+            "assert len(m.predict_proba(pd.DataFrame({'loan_amnt':['20000'],"
+            "'annual_inc':['50000'], 'term':['36 months'],"
+            "'purpose':['credit_card']}))) == 1"
+        ), str(pipeline)],
+        cwd=raiz,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert carregar.returncode == 0, carregar.stdout + carregar.stderr
+
+
+def test_execucoes_nao_sobrescrevem_modelo_ou_referencia(tmp_path: Path) -> None:
+    config = montar_config(tmp_path)
+    particoes = escrever_particoes(tmp_path)
+    manifesto = json.loads(escrever_manifesto(tmp_path, config).read_text(encoding="utf-8"))
+
+    def executar(run_id: str) -> dict:
+        out = tmp_path / "runs" / run_id
+        out.mkdir(parents=True)
+        codigo = treino.processar(Path("config.json"), config, manifesto, run_id, out)
+        assert codigo == treino.CODIGO_SUCESSO
+        return json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+
+    primeira = executar("immutable-1")
+    model_dir = Path(config["outputs"]["models_dir"]) / primeira["model_id"]
+    ref_dir = Path(config["outputs"]["reference_dir"]) / primeira["reference_id"]
+    snapshots = {p: treino.sha256_arquivo(p) for p in (*model_dir.iterdir(), *ref_dir.iterdir())}
+
+    # Alterar somente validation/test mantém a origem de treino, mas cria novos IDs.
+    particoes["validation"] = gerar_particao(120, 99, "VA2")
+    particoes["test"] = gerar_particao(120, 100, "TE2")
+    for name in ("validation", "test"):
+        path = Path(manifesto["inputs"][PARTICOES.index(name)]["path"])
+        particoes[name].to_csv(path, index=False)
+        item = next(x for x in manifesto["inputs"] if x["artifact_type"] == name)
+        item["sha256"] = treino.sha256_arquivo(path)
+        aprovado = next(
+            x for x in manifesto["quality"]["artifacts"] if x["artifact_type"] == name
+        )
+        aprovado["sha256"] = item["sha256"]
+    segunda = executar("immutable-2")
+
+    assert primeira["model_id"] != segunda["model_id"]
+    assert primeira["reference_id"] != segunda["reference_id"]
+    assert snapshots == {p: treino.sha256_arquivo(p) for p in snapshots}

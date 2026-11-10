@@ -255,18 +255,26 @@ uv run python src/monitoramento/treinamento.py ^
 | Referência congelada | `data/reference/<reference_id>/features.csv` |
 | Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
 
-O `model_id` deriva do `dataset_id`, do algoritmo e do hash SHA-256 do
-descritor do artefato (features, alvo, hiperparâmetros e origem), o que o torna
-reproduzível. A etapa aceita `--config`, `--input-manifest`, `--run-id` e
-`--output-dir`, exige um manifesto de `validacao` com qualidade aprovada, o mesmo
-`dataset_id` e `schema_version` configurados, e confere novamente hashes e
-colunas das três partições antes do treinamento. Preparação direta, validação
-rejeitada e hashes ou schemas divergentes bloqueiam a criação do modelo.
-Encerra com código `0` em sucesso e `1` para dependência rejeitada, incompatibilidade
-de artefatos ou erro técnico. O código `2` é usado pela etapa de validação para
-identificar lote reprovado.
+Cada execução grava em diretórios novos e imutáveis. O `model_id` e o
+`reference_id` combinam a assinatura do treino com um sufixo da execução; assim,
+reexecuções e mudanças somente em validação/teste preservam as avaliações e
+manifestos anteriores. Se qualquer destino já existir, a execução falha antes
+de gravar modelo ou referência. A etapa aceita `--config`, `--input-manifest`,
+`--run-id` e `--output-dir`, exige um manifesto de `validacao` com qualidade
+aprovada, o mesmo `dataset_id` e `schema_version` configurados, e confere
+novamente hashes e colunas das três partições antes do treinamento.
+Preparação direta, validação rejeitada e hashes ou schemas divergentes
+bloqueiam a criação do modelo. Encerra com código `0` em sucesso e `1` para
+dependência rejeitada, incompatibilidade de artefatos ou erro técnico.
+O código `2` é usado pela etapa de validação para identificar lote reprovado.
 O contrato completo está em
 [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
+Os conversores ficam em `monitoramento.preprocessamento`, módulo importável
+necessário para carregar o pipeline em outro processo com `src` no `PYTHONPATH`.
+O treinamento confere domínio binário 0/1 e rejeita ausências, infinitos e
+frações antes de converter o alvo. O treinamento consome o manifesto aprovado
+da validação Pandera.
 
 ```powershell
 uv run pytest tests/test_treinamento.py -q

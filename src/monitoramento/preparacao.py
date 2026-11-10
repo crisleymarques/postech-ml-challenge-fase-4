@@ -18,6 +18,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import numbers
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -69,22 +71,72 @@ def sha256_arquivo(caminho: Path) -> str:
 
 
 def carregar_config(caminho: Path) -> dict[str, Any]:
-    """Le e valida minimamente a configuracao da etapa."""
+    """Le e valida a configuracao antes de iniciar efeitos em disco."""
     if not caminho.is_file():
         raise ValueError(f"Configuracao nao encontrada: {caminho}")
     with caminho.open(encoding="utf-8") as arquivo:
         config = json.load(arquivo)
 
+    if not isinstance(config, dict):
+        raise TypeError("A configuracao deve ser um objeto JSON.")
     obrigatorios = ("source", "target", "split", "outputs")
     ausentes = [chave for chave in obrigatorios if chave not in config]
     if ausentes:
         raise ValueError(f"Chaves ausentes na configuracao: {ausentes}")
+    if config.get("contract_version") != CONTRACT_VERSION or config.get("stage") != STAGE:
+        raise ValueError("contract_version/stage incompativeis com a etapa de preparacao.")
+    for nome in obrigatorios:
+        if not isinstance(config[nome], dict):
+            raise TypeError(f"'{nome}' deve ser um objeto.")
 
-    proporcoes = config["split"].get("proportions", {})
+    source = config["source"]
+    if not isinstance(source.get("path"), str) or not source["path"].strip():
+        raise ValueError("source.path deve ser um caminho nao vazio.")
+    target = config["target"]
+    for campo in ("column", "positive_class", "negative_class"):
+        if not isinstance(target.get(campo), str) or not target[campo].strip():
+            raise ValueError(f"target.{campo} deve ser texto nao vazio.")
+    validar_mapeamento_alvo(target)
+
+    split = config["split"]
+    if split.get("strategy") != "temporal":
+        raise ValueError("split.strategy deve ser 'temporal'.")
+    for campo in ("time_column", "time_format"):
+        if not isinstance(split.get(campo), str) or not split[campo].strip():
+            raise ValueError(f"split.{campo} deve ser texto nao vazio.")
+    if type(split.get("seed")) is not int:
+        raise ValueError("split.seed deve ser um inteiro.")
+    if "dataset_id" in config and (
+        not isinstance(config["dataset_id"], str) or not config["dataset_id"].strip()
+    ):
+        raise ValueError("dataset_id deve ser texto nao vazio.")
+    if "preparation_id" in config and (
+        not isinstance(config["preparation_id"], str)
+        or not config["preparation_id"].strip()
+        or Path(config["preparation_id"]).name != config["preparation_id"]
+        or config["preparation_id"] in (".", "..")
+    ):
+        raise ValueError("preparation_id deve ser um identificador de diretorio valido.")
+    outputs = config["outputs"]
+    for campo in ("reference_dir", "analysis_dir"):
+        if not isinstance(outputs.get(campo), str) or not outputs[campo].strip():
+            raise ValueError(f"outputs.{campo} deve ser caminho nao vazio.")
+    if Path(outputs["reference_dir"]).resolve() == Path(outputs["analysis_dir"]).resolve():
+        raise ValueError("outputs.reference_dir e outputs.analysis_dir devem ser distintos.")
+
+    proporcoes = split.get("proportions")
+    if not isinstance(proporcoes, dict):
+        raise TypeError("split.proportions deve ser um objeto.")
     if set(proporcoes) != set(PARTICOES):
         raise ValueError(f"As proporcoes devem cobrir exatamente {list(PARTICOES)}.")
-    if any(valor <= 0 for valor in proporcoes.values()):
-        raise ValueError("Todas as proporcoes devem ser positivas.")
+    if any(
+        not isinstance(valor, numbers.Real)
+        or isinstance(valor, bool)
+        or not math.isfinite(valor)
+        or valor <= 0
+        for valor in proporcoes.values()
+    ):
+        raise ValueError("Todas as proporcoes devem ser finitas e positivas.")
     return config
 
 
@@ -112,6 +164,7 @@ def limpar(base: pd.DataFrame, alvo: str) -> pd.DataFrame:
 def binarizar_alvo(base: pd.DataFrame, target: dict[str, Any]) -> pd.DataFrame:
     """Substitui o alvo textual pela representacao binaria da classe positiva."""
     coluna = target["column"]
+    validar_mapeamento_alvo(target)
     positivos = base[coluna] == target["positive_class"]
     negativos = base[coluna] == target["negative_class"]
     desconhecidos = sorted(set(base.loc[~positivos & ~negativos, coluna]))
@@ -123,6 +176,29 @@ def binarizar_alvo(base: pd.DataFrame, target: dict[str, Any]) -> pd.DataFrame:
         positivos, int(target["positive_value"]), int(target["negative_value"])
     )
     return binaria
+
+
+def validar_mapeamento_alvo(target: dict[str, Any]) -> None:
+    """Garante duas classes textuais distintas e a codificacao binaria 0/1."""
+    positivos = target.get("positive_class")
+    negativos = target.get("negative_class")
+    valor_positivo = target.get("positive_value")
+    valor_negativo = target.get("negative_value")
+    if (
+        not isinstance(positivos, str)
+        or not positivos.strip()
+        or not isinstance(negativos, str)
+        or not negativos.strip()
+        or positivos == negativos
+        or type(valor_positivo) is not int
+        or type(valor_negativo) is not int
+        or valor_positivo not in (0, 1)
+        or valor_negativo not in (0, 1)
+        or valor_positivo == valor_negativo
+    ):
+        raise ValueError(
+            "Mapeamento do alvo exige classes textuais distintas e valores 0/1 distintos."
+        )
 
 
 def calcular_cotas(total: int, proporcoes: dict[str, float]) -> dict[str, int]:
@@ -179,6 +255,7 @@ def escrever_particoes(
     particoes: dict[str, pd.DataFrame],
     config: dict[str, Any],
     preparation_id: str,
+    run_id: str,
 ) -> list[dict[str, Any]]:
     """Grava cada particao em diretorio novo e descreve o artefato gerado."""
     diretorios: list[Path] = []
@@ -202,7 +279,7 @@ def escrever_particoes(
                 "artifact_type": nome,
                 "path": caminho.as_posix(),
                 "sha256": sha256_arquivo(caminho),
-                "producer_run_id": preparation_id,
+                "producer_run_id": run_id,
                 "row_count": int(len(particoes[nome])),
                 "columns": list(particoes[nome].columns),
             }
@@ -303,7 +380,7 @@ def montar_manifesto(
 
 
 def processar(config_path: Path, config: dict[str, Any], run_id: str, output_dir: Path) -> int:
-    """Executa a preparacao completa e retorna o codigo de saida."""
+    """Executa a preparacao com config validada e retorna o codigo de saida."""
     preparacao_iniciada = agora_iso()
     dataset_id = config.get("dataset_id", "desconhecido")
     preparation_id = config.get("preparation_id", run_id)
@@ -312,14 +389,18 @@ def processar(config_path: Path, config: dict[str, Any], run_id: str, output_dir
     saidas: list[dict[str, Any]] = []
 
     registrar_evento(eventos, run_id, dataset_id, "started", "INFO")
-
-    origem = Path(config["source"]["path"])
     try:
+        origem = Path(config["source"]["path"])
         alvo = config["target"]["column"]
         base = limpar(ler_origem(origem), alvo)
         base = binarizar_alvo(base, config["target"])
 
+        if base.empty:
+            raise RejeicaoDados("A origem nao contem registros de dados.")
         cotas = calcular_cotas(len(base), config["split"]["proportions"])
+        vazias = [nome for nome, cota in cotas.items() if cota == 0]
+        if vazias:
+            raise RejeicaoDados(f"A origem e pequena demais; particoes sem registros: {vazias}.")
         particoes = separar_temporal(
             base,
             config["split"]["time_column"],
@@ -327,7 +408,13 @@ def processar(config_path: Path, config: dict[str, Any], run_id: str, output_dir
             cotas,
         )
 
-        saidas = escrever_particoes(particoes, config, preparation_id)
+        entradas = [{
+            "artifact_type": config["source"].get("artifact_type", "origem"),
+            "path": origem.as_posix(),
+            "sha256": sha256_arquivo(origem),
+            "producer_run_id": None,
+        }]
+        saidas = escrever_particoes(particoes, config, preparation_id, run_id)
     except RejeicaoDados as erro:
         registrar_evento(eventos, run_id, dataset_id, "rejected", "ERROR", "REJEICAO_DADOS")
         return finalizar(
@@ -360,15 +447,6 @@ def processar(config_path: Path, config: dict[str, Any], run_id: str, output_dir
             entradas,
             output_dir,
         )
-
-    entradas = [
-        {
-            "artifact_type": config["source"].get("artifact_type", "origem"),
-            "path": origem.as_posix(),
-            "sha256": sha256_arquivo(origem),
-            "producer_run_id": None,
-        }
-    ]
 
     registrar_evento(eventos, run_id, dataset_id, "completed", "INFO")
     return finalizar(
