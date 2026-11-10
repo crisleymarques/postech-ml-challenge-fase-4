@@ -1,3 +1,10 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [project]
 name = "postech-ml-challenge-fase-4"
 version = "0.1.0"
@@ -12,6 +19,9 @@ dependencies = [
     "scipy>=1.18.1",
     "streamlit>=1.66.1",
 ]
+
+[project.scripts]
+simular-data-drift = "monitoramento.simulacao.data_drift.cli:main"
 
 [dependency-groups]
 dev = [

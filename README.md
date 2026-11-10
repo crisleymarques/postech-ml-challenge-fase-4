@@ -416,7 +416,7 @@ uv run pytest tests/test_lote_invalido.py -q
 ## Simulação temporal de Data Drift — F2-01
 
 O componente
-[src/monitoramento/simulacao_drift.py](src/monitoramento/simulacao_drift.py)
+[src/monitoramento/simulacao/data_drift/servico.py](src/monitoramento/simulacao/data_drift/servico.py)
 gera um conjunto de produção distinto da referência: parte da base reservada
 para produção simulada, avança o período de emissão (`issue_d`) para
 representar a passagem do tempo e aplica mudanças econômicas deterministas que
@@ -426,7 +426,7 @@ manifesto do produtor (`stage: simulacao`) com o período, as variáveis
 alteradas, as transformações e os parâmetros efetivos.
 
 ```powershell
-uv run python src/monitoramento/simulacao_drift.py ^
+uv run simular-data-drift ^
   --config configs/simulacao.json ^
   --batch-id batch-f201
 ```
@@ -452,7 +452,7 @@ permanecem dentro das faixas do contrato de qualidade, de modo que o cenário
 chega à detecção de drift sem ser reprovado por qualidade.
 
 ```powershell
-uv run pytest tests/test_simulacao_drift.py tests/test_simulacao_numericos_invalidos.py tests/test_simulacao_alteracoes_efetivas.py -q
+uv run pytest tests/simulacao/data_drift -q
 ```
 
 O deslocamento temporal deve ser um número inteiro positivo. Antes de publicar
@@ -539,7 +539,7 @@ Concluídos:
 - Simulação temporal de Data Drift (F2-01), com avanço do período e alteração
   intencional da distribuição de cinco features importantes, `features.csv`,
   rótulos em arquivo separado, manifesto com período e parâmetros, e testes em
-  `tests/test_simulacao_drift.py`.
+  `tests/simulacao/data_drift`.
 
 Pendentes:
 

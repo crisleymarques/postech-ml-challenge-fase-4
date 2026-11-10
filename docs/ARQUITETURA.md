@@ -16,10 +16,17 @@ Aceita apenas `reference` com `train`, `validation` e `test`; a simulação de
 produção com artefato `features` continua fora desse componente.
 
 O PR #34 implementa a simulação temporal de Data Drift (F2-01) em
-`simulacao_drift.py`: consome a base reservada, exige avanço temporal positivo
+`simulacao/data_drift/`: consome a base reservada, exige avanço temporal positivo
 e alteração efetiva da distribuição de pelo menos duas features, preserva
 ausências e rejeita valores numéricos inválidos. Publica features e rótulos
 separados, com parâmetros e alterações efetivas no manifesto.
+
+O pacote `simulacao/data_drift/` separa configuração (`config.py`),
+transformações sem escrita em disco (`transformacoes.py`), leitura e
+representações dos artefatos (`artefatos.py`), orquestração (`servico.py`) e
+linha de comando (`cli.py`). Hashes e escrita JSON ficam em
+`infraestrutura/arquivos.py`; timestamps e eventos JSONL ficam em
+`infraestrutura/observabilidade.py`. O comando é `uv run simular-data-drift`.
 
 A arquitetura é um pipeline local em lote, com Python 3.12, uv, arquivos como
 interface e dashboard Streamlit. As dependências incluem pandas,
@@ -60,7 +67,7 @@ flowchart TD
 | `preparacao.py` | Implementado: ler a fonte configurada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto com contrato semântico do alvo |
 | `validacao.py` | Implementado: aplicar contrato Pandera e bloquear conjunto inválido | Manifesto do produtor e contrato de qualidade | Relatório de qualidade e manifesto de aprovação ou rejeição |
 | `treinamento.py` | Implementado: ajustar no treino, selecionar na validação e avaliar no teste | Partições aprovadas e contrato do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
-| `simulacao_drift.py` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
+| `simulacao/data_drift/` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
 | Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
 | Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
 | Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
