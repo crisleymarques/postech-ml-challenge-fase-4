@@ -19,6 +19,8 @@ from monitoramento.infraestrutura import arquivos
 NUMERICAS = ["annual_inc", "dti", "revol_util"]
 CATEGORICAS = ["term", "home_ownership"]
 FEATURES = NUMERICAS + CATEGORICAS
+
+
 def montar_config() -> dict:
     """Contrato minimo da etapa de predicao."""
     return {
@@ -32,6 +34,7 @@ def montar_config() -> dict:
             "metadata_artifact": "model_metadata",
         },
         "batch": {"producer_stage": "simulacao", "features_artifact": "features"},
+        "validation": {"producer_stage": "validacao"},
         "outputs": {"analysis_dir": "data/analysis"},
     }
 
@@ -179,5 +182,24 @@ def preparar_manifestos(tmp_path: Path, estimador: object | None = None) -> list
         schema_version="1.0",
         outputs=[descritor("features", caminho_features, "run-simulacao")],
     )
-    return [modelo, lote]
-
+    features = lote["outputs"][0]
+    validacao = escrever_manifesto(
+        tmp_path / "man-validacao.json",
+        stage="validacao",
+        run_id="run-validacao",
+        dataset_id="teste",
+        schema_version="1.0",
+        scenario_id="data-drift",
+        batch_id="batch-1",
+        inputs=[dict(features)],
+        outputs=[],
+        quality={
+            "approved": True,
+            "dataset_id": "teste",
+            "schema_version": "1.0",
+            "artifacts": [
+                {"artifact_type": "features", "sha256": features["sha256"], "approved": True}
+            ],
+        },
+    )
+    return [modelo, lote, validacao]

@@ -14,5 +14,8 @@
   },
   "outputs": {
     "analysis_dir": "data/analysis"
+  },
+  "validation": {
+    "producer_stage": "validacao"
   }
 }

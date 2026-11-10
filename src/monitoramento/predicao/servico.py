@@ -1,4 +1,5 @@
 """Orquestracao da predicao, publicacao e observabilidade."""
+
 from __future__ import annotations
 
 import json
@@ -21,8 +22,10 @@ from .config import (
 )
 from .entradas import (
     artefato,
+    carregar_manifesto,
     ler_lote,
     separar_manifestos,
+    verificar_aprovacao,
     verificar_artefato,
     verificar_compatibilidade,
     verificar_metadata,
@@ -42,7 +45,7 @@ registrar_evento = partial(observabilidade.registrar_evento, stage=STAGE)
 def processar(
     config_path: Path,
     config: dict[str, Any],
-    manifestos: list[dict[str, Any]],
+    manifestos: list[dict[str, Any] | Path],
     run_id: str,
     output_dir: Path,
     *,
@@ -69,13 +72,18 @@ def processar(
         nivel="INFO",
     )
     modelo_id = referencia_id = scenario_id = batch_id = None
+    validacao_run_id = None
     manifesto_lote: dict[str, Any] = {}
     entradas: list[dict[str, Any]] = []
     score: dict[str, Any] = {"available": False}
     try:
         escrever_eventos(output_dir / "events.jsonl", eventos)
         escrever_json(output_dir / "config.json", config)
-        manifesto_modelo, manifesto_lote = separar_manifestos(manifestos, config)
+        manifestos = [carregar_manifesto(m) if isinstance(m, Path) else m for m in manifestos]
+        manifesto_modelo, manifesto_lote, manifesto_validacao = separar_manifestos(
+            manifestos, config
+        )
+        validacao_run_id = manifesto_validacao.get("run_id")
         verificar_compatibilidade(config, manifesto_modelo, manifesto_lote)
 
         modelo_id = manifesto_modelo.get("model_id")
@@ -93,6 +101,7 @@ def processar(
             {**item_features, "run_id_origem": manifesto_lote.get("run_id")},
         ]
 
+        verificar_aprovacao(manifesto_validacao, manifesto_lote, item_features)
         caminho_pipeline = verificar_artefato(item_pipeline)
         caminho_metadata = verificar_artefato(item_metadata)
         caminho_features = verificar_artefato(item_features)
@@ -164,6 +173,7 @@ def processar(
                 saidas=saidas,
                 score=score,
                 linhas=len(predicoes),
+                validacao_run_id=validacao_run_id,
             ),
         )
     except Exception as erro:  # Fronteira da execucao: persiste falhas tecnicas do modelo e de IO.
@@ -184,12 +194,23 @@ def processar(
             publicar_manifesto(
                 output_dir / "manifest.json",
                 montar_manifesto(
-                    run_id=run_id, iniciado=iniciado, finalizado=agora_iso(),
-                    config_path=config_path, config=config, manifesto_lote=manifesto_lote,
-                    modelo_id=modelo_id, referencia_id=referencia_id,
-                    scenario_id=scenario_id, batch_id=batch_id, entradas=entradas,
-                    saidas=[], score=score, linhas=0, status="failed",
+                    run_id=run_id,
+                    iniciado=iniciado,
+                    finalizado=agora_iso(),
+                    config_path=config_path,
+                    config=config,
+                    manifesto_lote=manifesto_lote,
+                    modelo_id=modelo_id,
+                    referencia_id=referencia_id,
+                    scenario_id=scenario_id,
+                    batch_id=batch_id,
+                    entradas=entradas,
+                    saidas=[],
+                    score=score,
+                    linhas=0,
+                    status="failed",
                     error_code="PREDICAO_INVALIDA",
+                    validacao_run_id=validacao_run_id,
                 ),
             )
         except OSError:
@@ -203,4 +224,3 @@ def processar(
     print(f"  predicoes -> {caminho_predicoes.as_posix()}")
     print(f"  manifesto -> {output_dir.as_posix()}/manifest.json")
     return CODIGO_SUCESSO
-

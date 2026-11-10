@@ -490,8 +490,8 @@ uma mensagem controlada é emitida em `stderr`, sem anunciar sucesso.
 O componente [src/monitoramento/predicao/](src/monitoramento/predicao/)
 carrega o pipeline do modelo baseline (F1-02) e o lote de features da simulação
 (F2-01), aplica o pré-processamento já embutido no pipeline e gera as
-predições para cada registro. A etapa recebe dois manifestos de entrada
-(treinamento e simulação), confere os hashes dos artefatos, valida que ambos
+predições para cada registro. A etapa recebe três manifestos de entrada
+(treinamento, simulação e validação de produção), confere os hashes dos artefatos, valida que ambos
 pertencem ao mesmo `dataset_id` e publica o resultado em
 `data/analysis/<scenario_id>/<batch_id>/<model_id>/predictions.csv`, seguindo o
 contrato da etapa de predição.
@@ -504,10 +504,16 @@ desserializar (`carregar_pipeline`), garantindo consistência do
 pré-processamento com o treinamento.
 
 ```powershell
+uv run python src/monitoramento/validacao.py ^
+  --config configs/validacao.json --profile production ^
+  --input-manifest reports/runs/<run_simulacao>/manifest.json ^
+  --run-id run-f202-validacao
+
 uv run gerar-predicoes ^
   --config configs/predicao.json ^
   --input-manifest reports/runs/<run_treinamento>/manifest.json ^
   --input-manifest reports/runs/<run_simulacao>/manifest.json ^
+  --input-manifest reports/runs/run-f202-validacao/manifest.json ^
   --run-id run-f202-predicao
 ```
 
@@ -607,3 +613,8 @@ e features. Ausência, formato inválido ou divergência bloqueiam o consumo.
 A predição exige igualdade exata do `schema_version` do treinamento, dos
 metadados e da simulação. Os metadados também devem corresponder ao
 `dataset_id`, `model_id` e `reference_id` do manifesto do treinamento.
+
+A aprovação de produção deve corresponder ao cenário, lote, dataset, schema,
+produtor, caminho e hash exatos das features. O manifesto da predição registra
+`quality_validation_run_id`. Chamadas antigas com apenas dois manifestos são
+recusadas; execute a validação com `--profile production` e acrescente sua saída.

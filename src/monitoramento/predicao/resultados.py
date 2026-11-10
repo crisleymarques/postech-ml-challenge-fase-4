@@ -1,4 +1,5 @@
 """Publicacao e representacoes dos resultados da predicao."""
+
 from __future__ import annotations
 
 import os
@@ -81,6 +82,7 @@ def montar_manifesto(
     linhas: int,
     status: str = "success",
     error_code: str | None = None,
+    validacao_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Reune o manifesto comum do produtor das predicoes."""
     return {
@@ -102,8 +104,8 @@ def montar_manifesto(
         "row_count": int(linhas),
         "score": score,
         "error_code": error_code,
+        "quality_validation_run_id": validacao_run_id,
     }
-
 
 
 def publicar_manifesto(caminho: Path, manifesto: dict[str, Any]) -> None:

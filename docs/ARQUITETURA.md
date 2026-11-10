@@ -4,7 +4,8 @@
 
 No escopo do PR #32 estão implementados a preparação e separação de dados
 (F1-01), o treinamento baseline (F1-02) e a validação Pandera antes do treino
-(F1-03). Predição, detecção de drift e dashboard seguem
+(F1-03). Predição F2-02 também está implementada, condicionada à validação
+de produção. Detecção de drift e dashboard seguem
 planejados e não devem ser tratados como comandos disponíveis. Testes sintéticos
 cobrem a integração preparação → validação → treinamento; resultados históricos
 do dataset real não foram reexecutados como parte do PR #32.
@@ -68,7 +69,7 @@ flowchart TD
 | `validacao.py` | Implementado: aplicar contrato Pandera e bloquear conjunto inválido | Manifesto do produtor e contrato de qualidade | Relatório de qualidade e manifesto de aprovação ou rejeição |
 | `treinamento.py` | Implementado: ajustar no treino, selecionar na validação e avaliar no teste | Partições aprovadas e contrato do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
 | `simulacao/data_drift/` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
-| Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
+| Predição | Implementado: aplicar o pipeline treinado após aprovação | Manifestos de treinamento, simulação e validação de produção | Predições vinculadas ao modelo e lote |
 | Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
 | Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
 
@@ -352,3 +353,11 @@ entradas, inferência, resultados, serviço e CLI. Manifestos e integridade
 reutilizam `infraestrutura/manifestos.py`; o carregamento do pipeline e a
 compatibilidade com conversores persistidos ficam em `modelos/carregamento.py`.
 O comando é `uv run gerar-predicoes`; os testes ficam em `tests/predicao/`.
+
+
+A predição exige três manifestos, sem dependência da ordem: treinamento,
+simulação e validação. O resumo `quality` deve aprovar o único artefato
+`features`, com o mesmo hash, caminho e produtor do lote. Dataset, schema,
+cenário e lote precisam coincidir. A etapa recalcula a integridade antes de
+inferir e registra `quality_validation_run_id`. Não há aprovação implícita
+quando a validação está ausente ou rejeitada.

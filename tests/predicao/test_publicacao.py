@@ -1,4 +1,5 @@
 """Testes migrados da etapa de predicao."""
+
 from __future__ import annotations
 
 import json
@@ -96,16 +97,22 @@ def test_processar_rejeita_dataset_divergente(tmp_path: Path) -> None:
     assert eventos[-1]["error_code"] == "PREDICAO_INVALIDA"
 
 
-
 def test_falha_de_escrita_publica_manifesto_terminal(tmp_path: Path) -> None:
     manifestos = preparar_manifestos(tmp_path)
     analysis = tmp_path / "analysis"
     analysis.write_text("arquivo no lugar do diretorio")
     output = tmp_path / "run"
-    assert servico.processar(
-        tmp_path / "config.json", montar_config(), manifestos, "io", output,
-        analysis_dir=analysis,
-    ) == cfg.CODIGO_ERRO
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "io",
+            output,
+            analysis_dir=analysis,
+        )
+        == cfg.CODIGO_ERRO
+    )
     manifesto = json.loads((output / "manifest.json").read_text())
     eventos = [json.loads(linha) for linha in (output / "events.jsonl").read_text().splitlines()]
     assert manifesto["status"] == "failed"
@@ -121,9 +128,16 @@ def test_diretorio_existente_permanece_intacto(tmp_path: Path) -> None:
     output.mkdir()
     marcador = output / "manifest.json"
     marcador.write_text("anterior")
-    assert servico.processar(
-        tmp_path / "config.json", montar_config(), [], "colisao", output,
-    ) == cfg.CODIGO_ERRO
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            [],
+            "colisao",
+            output,
+        )
+        == cfg.CODIGO_ERRO
+    )
     assert marcador.read_text() == "anterior"
     assert list(output.iterdir()) == [marcador]
 
@@ -132,9 +146,16 @@ def test_config_invalida_nao_inicia_execucao(tmp_path: Path) -> None:
     output = tmp_path / "run"
     config = montar_config()
     config["outputs"] = {}
-    assert servico.processar(
-        tmp_path / "config.json", config, [], "invalida", output,
-    ) == cfg.CODIGO_ERRO
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            config,
+            [],
+            "invalida",
+            output,
+        )
+        == cfg.CODIGO_ERRO
+    )
     assert not output.exists()
 
 
@@ -148,9 +169,16 @@ def test_inicio_persistido_antes_de_carregar_modelo(tmp_path: Path, monkeypatch)
         raise RuntimeError("modelo indisponivel")
 
     monkeypatch.setattr(servico, "carregar_pipeline", falhar)
-    assert servico.processar(
-        tmp_path / "config.json", montar_config(), manifestos, "modelo", output,
-    ) == cfg.CODIGO_ERRO
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "modelo",
+            output,
+        )
+        == cfg.CODIGO_ERRO
+    )
     assert json.loads((output / "manifest.json").read_text())["status"] == "failed"
 
 
@@ -168,10 +196,17 @@ def test_hash_invalido_bloqueia_modelo(tmp_path: Path, monkeypatch, tipo, hash_i
 
     monkeypatch.setattr(servico, "carregar_pipeline", nao_carregar)
     output = tmp_path / "run"
-    assert servico.processar(
-        tmp_path / "config.json", montar_config(), manifestos, "hash", output,
-        analysis_dir=tmp_path / "analysis",
-    ) == cfg.CODIGO_ERRO
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "hash",
+            output,
+            analysis_dir=tmp_path / "analysis",
+        )
+        == cfg.CODIGO_ERRO
+    )
     assert json.loads((output / "manifest.json").read_text())["status"] == "failed"
     assert not (tmp_path / "analysis").exists()
 
@@ -190,9 +225,16 @@ def test_schema_incompativel_bloqueia_inferencia(tmp_path: Path, monkeypatch, or
         manifestos[0 if origem == "modelo" else 1]["schema_version"] = schema
     monkeypatch.setattr(servico, "carregar_pipeline", lambda _: pytest.fail("schema invalido"))
     output = tmp_path / "run"
-    assert servico.processar(
-        tmp_path / "config.json", montar_config(), manifestos, "schema", output,
-    ) == cfg.CODIGO_ERRO
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "schema",
+            output,
+        )
+        == cfg.CODIGO_ERRO
+    )
     assert json.loads((output / "manifest.json").read_text())["outputs"] == []
 
 
@@ -205,6 +247,13 @@ def test_metadata_divergente_bloqueia_inferencia(tmp_path: Path, monkeypatch, ca
     arquivos.escrever_json(caminho, metadata)
     manifestos[0]["outputs"][1]["sha256"] = arquivos.sha256_arquivo(caminho)
     monkeypatch.setattr(servico, "carregar_pipeline", lambda _: pytest.fail("identidade invalida"))
-    assert servico.processar(
-        tmp_path / "config.json", montar_config(), manifestos, "metadata", tmp_path / "run",
-    ) == cfg.CODIGO_ERRO
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "metadata",
+            tmp_path / "run",
+        )
+        == cfg.CODIGO_ERRO
+    )

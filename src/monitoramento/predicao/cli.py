@@ -1,4 +1,5 @@
 """Interface de linha de comando da predicao."""
+
 from __future__ import annotations
 
 import argparse
@@ -6,8 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import CODIGO_ERRO, ErroConfiguracao, ErroPredicao, carregar_config
-from .entradas import carregar_manifesto
+from .config import CODIGO_ERRO, ErroConfiguracao, carregar_config
 from .servico import processar
 
 
@@ -21,7 +21,7 @@ def main() -> None:
         type=Path,
         action="append",
         default=None,
-        help="Manifesto de entrada (treinamento e simulacao). Repetivel.",
+        help="Manifesto de entrada (treinamento, simulacao e validacao). Repetivel.",
     )
     parser.add_argument("--run-id", default=None, help="Identificador unico da execucao.")
     parser.add_argument("--output-dir", type=Path, default=None, help="Diretorio novo da execucao.")
@@ -37,14 +37,8 @@ def main() -> None:
         sys.exit(CODIGO_ERRO)
 
     entradas = args.input_manifest or []
-    if len(entradas) < 2:
-        print("Informe dois manifestos via --input-manifest (um do treinamento e um da simulacao).")
-        sys.exit(CODIGO_ERRO)
-
-    try:
-        manifestos = [carregar_manifesto(caminho) for caminho in entradas]
-    except (ErroPredicao, OSError, ValueError) as erro:
-        print(f"Falha na predicao: {erro}")
+    if len(entradas) != 3:
+        print("Informe tres manifestos: treinamento, simulacao e validacao de producao.")
         sys.exit(CODIGO_ERRO)
 
     run_id = args.run_id or datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%S%fZ")
@@ -57,7 +51,7 @@ def main() -> None:
         processar(
             args.config,
             config,
-            manifestos,
+            entradas,
             run_id,
             output_dir,
             analysis_dir=args.analysis_dir,
@@ -67,4 +61,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
