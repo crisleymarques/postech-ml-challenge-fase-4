@@ -455,6 +455,12 @@ chega à detecção de drift sem ser reprovado por qualidade.
 uv run pytest tests/test_simulacao_drift.py -q
 ```
 
+Os diretórios da execução e do lote são exclusivos: `--output-dir` e
+`--batch-id` não podem reutilizar destinos existentes, inclusive em chamadas
+concorrentes. Uma colisão encerra com código `1`, preservando os CSVs e os
+manifestos anteriores. Use um novo identificador para repetir o cenário;
+a configuração é validada antes de iniciar a execução.
+
 ## Convenção de commits
 
 Os commits seguem o formato:

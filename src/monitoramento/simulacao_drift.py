@@ -191,8 +191,7 @@ def separar_features_rotulos(base: pd.DataFrame, alvo: str) -> tuple[pd.DataFram
 
 def escrever_artefato(caminho: Path, base: pd.DataFrame) -> None:
     """Grava um artefato tabular em CSV preservando as colunas observadas."""
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    base.to_csv(caminho, index=False, encoding="utf-8")
+    base.to_csv(caminho, index=False, encoding="utf-8", mode="x")
 
 
 def descritor_artefato(tipo: str, caminho: Path, run_id: str, base: pd.DataFrame) -> dict[str, Any]:
@@ -332,14 +331,30 @@ def gerar(
     seed: int | None,
 ) -> int:
     """Gera o cenario de Data Drift e publica manifesto, eventos e metricas."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    iniciado = agora_iso()
-    eventos: list[dict[str, Any]] = []
-
     try:
         config = carregar_config(config_path)
         dataset_id = config["dataset_id"]
         scenario_id = config["scenario_id"]
+        destino = (analysis_dir or Path(config["outputs"]["analysis_dir"])) / scenario_id / batch_id
+        semente = int(seed if seed is not None else config["drift"]["seed"])
+    except (ErroSimulacao, ValueError, TypeError, KeyError, OSError) as erro:
+        print(f"Configuracao invalida ({type(erro).__name__}).", file=sys.stderr)
+        return CODIGO_ERRO
+
+    # A verificacao antecipa colisoes comuns; mkdir exclusivo protege tambem corridas.
+    if output_dir.exists() or destino.exists():
+        print("Diretorio de execucao ou lote ja existe.", file=sys.stderr)
+        return CODIGO_ERRO
+    try:
+        output_dir.mkdir(parents=True, exist_ok=False)
+    except OSError as erro:
+        print(f"Falha ao reservar execucao ({type(erro).__name__}).", file=sys.stderr)
+        return CODIGO_ERRO
+
+    iniciado = agora_iso()
+    eventos: list[dict[str, Any]] = []
+    try:
+        destino.mkdir(parents=True, exist_ok=False)
         registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "started", "INFO")
 
         origem = source_path or Path(config["base"]["path"])
@@ -351,7 +366,6 @@ def gerar(
         if coluna_tempo not in base.columns:
             raise ErroSimulacao(f"Coluna temporal ausente na base: {coluna_tempo}")
 
-        semente = int(seed if seed is not None else config["drift"]["seed"])
         jitter = float(config["drift"].get("jitter", 0.0))
 
         periodo_origem = resumo_periodo(base[coluna_tempo], formato)
@@ -367,9 +381,8 @@ def gerar(
         alvo = config["target"]["column"]
         features, rotulos = separar_features_rotulos(base_simulada, alvo)
 
-        destino = (analysis_dir or Path(config["outputs"]["analysis_dir"])) / scenario_id
-        caminho_features = destino / batch_id / "features.csv"
-        caminho_rotulos = destino / batch_id / "labels.csv"
+        caminho_features = destino / "features.csv"
+        caminho_rotulos = destino / "labels.csv"
         escrever_artefato(caminho_features, features)
         escrever_artefato(caminho_rotulos, rotulos)
 
@@ -418,7 +431,7 @@ def gerar(
         escrever_json(output_dir / "manifest.json", manifesto)
         registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "completed", "INFO")
         escrever_eventos(output_dir / "events.jsonl", eventos)
-    except (ErroSimulacao, ValueError) as erro:
+    except (ErroSimulacao, ValueError, OSError) as erro:
         print(f"Falha ao gerar o cenario simulado: {erro}")
         return CODIGO_ERRO
 

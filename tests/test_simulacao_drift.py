@@ -287,3 +287,73 @@ def test_dataset_simulado_difere_da_referencia(tmp_path: Path) -> None:
     assert len(alteradas) >= 2
     assert simulado["issue_d"].eq("Jul-2019").all()
     assert set(simulado["record_id"]) == set(base["record_id"])
+
+
+def parametros_geracao(tmp_path: Path) -> dict:
+    return {
+        "config_path": escrever_config(tmp_path, montar_config()),
+        "source_path": escrever_origem(tmp_path),
+        "analysis_dir": tmp_path / "analysis",
+        "batch_id": "batch-1",
+        "run_id": "run-1",
+        "output_dir": tmp_path / "runs" / "run-1",
+        "seed": 42,
+    }
+
+
+def hashes_diretorio(diretorio: Path) -> dict[str, str]:
+    return {
+        caminho.relative_to(diretorio).as_posix(): sd.sha256_arquivo(caminho)
+        for caminho in diretorio.rglob("*")
+        if caminho.is_file()
+    }
+
+
+@pytest.mark.parametrize("colisao", ["execucao", "lote"])
+def test_gerar_preserva_artefatos_publicados_na_colisao(tmp_path: Path, colisao: str) -> None:
+    parametros = parametros_geracao(tmp_path)
+    assert sd.gerar(**parametros) == sd.CODIGO_SUCESSO
+    anteriores = hashes_diretorio(tmp_path)
+    if colisao == "lote":
+        parametros.update(run_id="run-2", output_dir=tmp_path / "runs" / "run-2")
+    parametros["seed"] = 7
+
+    assert sd.gerar(**parametros) == sd.CODIGO_ERRO
+    assert hashes_diretorio(tmp_path) == anteriores
+
+
+@pytest.mark.parametrize("colisao", ["execucao", "lote"])
+def test_reserva_exclusiva_rejeita_colisao_apos_prechecagem(
+    tmp_path: Path, monkeypatch, colisao: str
+) -> None:
+    parametros = parametros_geracao(tmp_path)
+    destino = (
+        parametros["output_dir"]
+        if colisao == "execucao"
+        else tmp_path / "analysis" / "data-drift" / "batch-1"
+    )
+    mkdir = Path.mkdir
+    concorrente = destino / "arquivo-do-concorrente"
+
+    def reservar(caminho, *args, **kwargs):
+        if caminho == destino:
+            mkdir(caminho, parents=True, exist_ok=False)
+            concorrente.write_text("preservar", encoding="utf-8")
+        return mkdir(caminho, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", reservar)
+
+    assert sd.gerar(**parametros) == sd.CODIGO_ERRO
+    assert concorrente.read_text(encoding="utf-8") == "preservar"
+    assert list(destino.iterdir()) == [concorrente]
+
+
+def test_config_invalida_nao_reserva_diretorios(tmp_path: Path) -> None:
+    parametros = parametros_geracao(tmp_path)
+    config = montar_config()
+    config.pop("scenario_id")
+    escrever_config(tmp_path, config)
+
+    assert sd.gerar(**parametros) == sd.CODIGO_ERRO
+    assert not parametros["output_dir"].exists()
+    assert not parametros["analysis_dir"].exists()
