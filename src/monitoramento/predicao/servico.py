@@ -11,7 +11,14 @@ from monitoramento.infraestrutura.arquivos import escrever_json
 from monitoramento.infraestrutura.observabilidade import agora_iso, escrever_eventos
 from monitoramento.modelos.carregamento import carregar_pipeline
 
-from .config import CODIGO_ERRO, CODIGO_SUCESSO, STAGE, ErroPredicao
+from .config import (
+    CODIGO_ERRO,
+    CODIGO_SUCESSO,
+    STAGE,
+    ErroConfiguracao,
+    ErroPredicao,
+    validar_config,
+)
 from .entradas import (
     artefato,
     ler_lote,
@@ -20,7 +27,13 @@ from .entradas import (
     verificar_compatibilidade,
 )
 from .inferencia import prever
-from .resultados import descritor_artefato, escrever_predicoes, montar_manifesto, montar_medidas
+from .resultados import (
+    descritor_artefato,
+    escrever_predicoes,
+    montar_manifesto,
+    montar_medidas,
+    publicar_manifesto,
+)
 
 registrar_evento = partial(observabilidade.registrar_evento, stage=STAGE)
 
@@ -35,7 +48,12 @@ def processar(
     analysis_dir: Path | None = None,
 ) -> int:
     """Executa a predicao e publica manifesto, eventos, metricas e predicoes."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        validar_config(config)
+        output_dir.mkdir(parents=True, exist_ok=False)
+    except (ErroConfiguracao, OSError) as erro:
+        print(f"Falha na predicao: {erro}")
+        return CODIGO_ERRO
     iniciado = agora_iso()
     eventos: list[dict[str, Any]] = []
     registrar_evento(
@@ -49,7 +67,13 @@ def processar(
         evento="started",
         nivel="INFO",
     )
+    modelo_id = referencia_id = scenario_id = batch_id = None
+    manifesto_lote: dict[str, Any] = {}
+    entradas: list[dict[str, Any]] = []
+    score: dict[str, Any] = {"available": False}
     try:
+        escrever_eventos(output_dir / "events.jsonl", eventos)
+        escrever_json(output_dir / "config.json", config)
         manifesto_modelo, manifesto_lote = separar_manifestos(manifestos, config)
         verificar_compatibilidade(config, manifesto_modelo, manifesto_lote)
 
@@ -61,6 +85,12 @@ def processar(
         item_pipeline = artefato(manifesto_modelo, config["model"]["pipeline_artifact"])
         item_metadata = artefato(manifesto_modelo, config["model"]["metadata_artifact"])
         item_features = artefato(manifesto_lote, config["batch"]["features_artifact"])
+
+        entradas = [
+            {**item_pipeline, "run_id_origem": manifesto_modelo.get("run_id")},
+            {**item_metadata, "run_id_origem": manifesto_modelo.get("run_id")},
+            {**item_features, "run_id_origem": manifesto_lote.get("run_id")},
+        ]
 
         caminho_pipeline = verificar_artefato(item_pipeline)
         caminho_metadata = verificar_artefato(item_metadata)
@@ -85,11 +115,6 @@ def processar(
         caminho_predicoes = destino / "predictions.csv"
         escrever_predicoes(caminho_predicoes, predicoes)
 
-        entradas = [
-            {**item_pipeline, "run_id_origem": manifesto_modelo.get("run_id")},
-            {**item_metadata, "run_id_origem": manifesto_modelo.get("run_id")},
-            {**item_features, "run_id_origem": manifesto_lote.get("run_id")},
-        ]
         saidas = [descritor_artefato("predictions", caminho_predicoes, run_id, predicoes)]
 
         score = {
@@ -108,7 +133,19 @@ def processar(
                 "measurements": montar_medidas(predicoes, score_disponivel),
             },
         )
-        escrever_json(
+        registrar_evento(
+            eventos,
+            run_id=run_id,
+            dataset_id=config.get("dataset_id"),
+            model_id=modelo_id,
+            reference_id=referencia_id,
+            scenario_id=scenario_id,
+            batch_id=batch_id,
+            evento="completed",
+            nivel="INFO",
+        )
+        escrever_eventos(output_dir / "events.jsonl", eventos)
+        publicar_manifesto(
             output_dir / "manifest.json",
             montar_manifesto(
                 run_id=run_id,
@@ -127,6 +164,7 @@ def processar(
                 linhas=len(predicoes),
             ),
         )
+    except Exception as erro:  # Fronteira da execucao: persiste falhas tecnicas do modelo e de IO.
         registrar_evento(
             eventos,
             run_id=run_id,
@@ -135,24 +173,25 @@ def processar(
             reference_id=referencia_id,
             scenario_id=scenario_id,
             batch_id=batch_id,
-            evento="completed",
-            nivel="INFO",
-        )
-        escrever_eventos(output_dir / "events.jsonl", eventos)
-    except (ErroPredicao, ValueError, KeyError) as erro:
-        registrar_evento(
-            eventos,
-            run_id=run_id,
-            dataset_id=config.get("dataset_id"),
-            model_id=None,
-            reference_id=None,
-            scenario_id=None,
-            batch_id=None,
             evento="failed",
             nivel="ERROR",
             error_code="PREDICAO_INVALIDA",
         )
-        escrever_eventos(output_dir / "events.jsonl", eventos)
+        try:
+            escrever_eventos(output_dir / "events.jsonl", eventos)
+            publicar_manifesto(
+                output_dir / "manifest.json",
+                montar_manifesto(
+                    run_id=run_id, iniciado=iniciado, finalizado=agora_iso(),
+                    config_path=config_path, config=config, manifesto_lote=manifesto_lote,
+                    modelo_id=modelo_id, referencia_id=referencia_id,
+                    scenario_id=scenario_id, batch_id=batch_id, entradas=entradas,
+                    saidas=[], score=score, linhas=0, status="failed",
+                    error_code="PREDICAO_INVALIDA",
+                ),
+            )
+        except OSError:
+            print("Nao foi possivel persistir o diagnostico da execucao.")
         print(f"Falha na predicao: {erro}")
         return CODIGO_ERRO
 
@@ -162,3 +201,4 @@ def processar(
     print(f"  predicoes -> {caminho_predicoes.as_posix()}")
     print(f"  manifesto -> {output_dir.as_posix()}/manifest.json")
     return CODIGO_SUCESSO
+

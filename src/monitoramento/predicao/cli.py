@@ -43,7 +43,7 @@ def main() -> None:
 
     try:
         manifestos = [carregar_manifesto(caminho) for caminho in entradas]
-    except ErroPredicao as erro:
+    except (ErroPredicao, OSError, ValueError) as erro:
         print(f"Falha na predicao: {erro}")
         sys.exit(CODIGO_ERRO)
 
@@ -67,3 +67,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

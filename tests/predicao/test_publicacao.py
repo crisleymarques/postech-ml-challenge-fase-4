@@ -93,3 +93,61 @@ def test_processar_rejeita_dataset_divergente(tmp_path: Path) -> None:
     ]
     assert eventos[-1]["event"] == "failed"
     assert eventos[-1]["error_code"] == "PREDICAO_INVALIDA"
+
+
+
+def test_falha_de_escrita_publica_manifesto_terminal(tmp_path: Path) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+    analysis = tmp_path / "analysis"
+    analysis.write_text("arquivo no lugar do diretorio")
+    output = tmp_path / "run"
+    assert servico.processar(
+        tmp_path / "config.json", montar_config(), manifestos, "io", output,
+        analysis_dir=analysis,
+    ) == cfg.CODIGO_ERRO
+    manifesto = json.loads((output / "manifest.json").read_text())
+    eventos = [json.loads(linha) for linha in (output / "events.jsonl").read_text().splitlines()]
+    assert manifesto["status"] == "failed"
+    assert manifesto["error_code"] == "PREDICAO_INVALIDA"
+    assert manifesto["outputs"] == []
+    assert manifesto["started_at"] <= manifesto["finished_at"]
+    assert manifesto["model_id"] == "modelo-teste"
+    assert [evento["event"] for evento in eventos] == ["started", "failed"]
+
+
+def test_diretorio_existente_permanece_intacto(tmp_path: Path) -> None:
+    output = tmp_path / "run"
+    output.mkdir()
+    marcador = output / "manifest.json"
+    marcador.write_text("anterior")
+    assert servico.processar(
+        tmp_path / "config.json", montar_config(), [], "colisao", output,
+    ) == cfg.CODIGO_ERRO
+    assert marcador.read_text() == "anterior"
+    assert list(output.iterdir()) == [marcador]
+
+
+def test_config_invalida_nao_inicia_execucao(tmp_path: Path) -> None:
+    output = tmp_path / "run"
+    config = montar_config()
+    config["outputs"] = {}
+    assert servico.processar(
+        tmp_path / "config.json", config, [], "invalida", output,
+    ) == cfg.CODIGO_ERRO
+    assert not output.exists()
+
+
+def test_inicio_persistido_antes_de_carregar_modelo(tmp_path: Path, monkeypatch) -> None:
+    output = tmp_path / "run"
+    manifestos = preparar_manifestos(tmp_path)
+
+    def falhar(_):
+        eventos = (output / "events.jsonl").read_text().splitlines()
+        assert json.loads(eventos[0])["event"] == "started"
+        raise RuntimeError("modelo indisponivel")
+
+    monkeypatch.setattr(servico, "carregar_pipeline", falhar)
+    assert servico.processar(
+        tmp_path / "config.json", montar_config(), manifestos, "modelo", output,
+    ) == cfg.CODIGO_ERRO
+    assert json.loads((output / "manifest.json").read_text())["status"] == "failed"

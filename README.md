@@ -593,3 +593,10 @@ Pendentes:
   testes isolados de obtenção, de preparação do dataset, de treinamento e de
   validação.
 - Implementação das etapas restantes do pipeline (detecção, dashboard).
+
+
+Falhas da predição após o início publicam evento `failed` e manifesto terminal
+com `status: failed`, sem saídas válidas, sempre que o diretório de execução
+estiver gravável. O início é persistido antes da inferência; o manifesto é
+publicado atomicamente por último. Configuração inválida e diretório de execução
+já existente são recusados antes do início.

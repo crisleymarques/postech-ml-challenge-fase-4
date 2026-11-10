@@ -1,7 +1,9 @@
 """Publicacao e representacoes dos resultados da predicao."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import pandas as pd
@@ -77,13 +79,15 @@ def montar_manifesto(
     saidas: list[dict[str, Any]],
     score: dict[str, Any],
     linhas: int,
+    status: str = "success",
+    error_code: str | None = None,
 ) -> dict[str, Any]:
     """Reune o manifesto comum do produtor das predicoes."""
     return {
         "contract_version": CONTRACT_VERSION,
         "run_id": run_id,
         "stage": STAGE,
-        "status": "success",
+        "status": status,
         "started_at": iniciado,
         "finished_at": finalizado,
         "config_path": config_path.as_posix(),
@@ -97,5 +101,19 @@ def montar_manifesto(
         "batch_id": batch_id,
         "row_count": int(linhas),
         "score": score,
-        "error_code": None,
+        "error_code": error_code,
     }
+
+
+
+def publicar_manifesto(caminho: Path, manifesto: dict[str, Any]) -> None:
+    """Publica o manifesto completo atomicamente, apos os demais artefatos."""
+    from monitoramento.infraestrutura.arquivos import escrever_json
+
+    with NamedTemporaryFile(dir=caminho.parent, suffix=".tmp", delete=False) as arquivo:
+        temporario = Path(arquivo.name)
+    try:
+        escrever_json(temporario, manifesto)
+        os.replace(temporario, caminho)
+    finally:
+        temporario.unlink(missing_ok=True)
