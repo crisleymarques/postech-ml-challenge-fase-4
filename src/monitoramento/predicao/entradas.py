@@ -61,6 +61,21 @@ def verificar_compatibilidade(
             )
 
 
+def verificar_metadata(
+    metadata: dict[str, Any], modelo: dict[str, Any], lote: dict[str, Any]
+) -> None:
+    """Exige identidade e schema consistentes antes de carregar o modelo."""
+    schema = modelo.get("schema_version")
+    if not isinstance(schema, str) or not schema.strip() or any(
+        origem.get("schema_version") != schema for origem in (metadata, lote)
+    ):
+        raise ErroPredicao("schema_version ausente ou divergente entre modelo, metadados e lote.")
+    for campo in ("dataset_id", "model_id", "reference_id"):
+        valor = modelo.get(campo)
+        if not isinstance(valor, str) or not valor.strip() or metadata.get(campo) != valor:
+            raise ErroPredicao(f"{campo} ausente ou divergente nos metadados do modelo.")
+
+
 def ler_lote(caminho: Path) -> pd.DataFrame:
     """Le o lote como texto tratando campo vazio como ausencia, como no treino."""
     base = pd.read_csv(caminho, dtype=str, na_filter=False)

@@ -25,6 +25,7 @@ from .entradas import (
     separar_manifestos,
     verificar_artefato,
     verificar_compatibilidade,
+    verificar_metadata,
 )
 from .inferencia import prever
 from .resultados import (
@@ -99,6 +100,7 @@ def processar(
         with caminho_metadata.open(encoding="utf-8") as arquivo:
             metadata = json.load(arquivo)
 
+        verificar_metadata(metadata, manifesto_modelo, manifesto_lote)
         pipeline = carregar_pipeline(caminho_pipeline)
         lote = ler_lote(caminho_features)
         predicoes, score_disponivel = prever(pipeline, metadata, lote)

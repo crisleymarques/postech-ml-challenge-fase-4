@@ -174,3 +174,37 @@ def test_hash_invalido_bloqueia_modelo(tmp_path: Path, monkeypatch, tipo, hash_i
     ) == cfg.CODIGO_ERRO
     assert json.loads((output / "manifest.json").read_text())["status"] == "failed"
     assert not (tmp_path / "analysis").exists()
+
+
+@pytest.mark.parametrize("origem", ["modelo", "metadata", "lote"])
+@pytest.mark.parametrize("schema", [None, "", "99.0"])
+def test_schema_incompativel_bloqueia_inferencia(tmp_path: Path, monkeypatch, origem, schema):
+    manifestos = preparar_manifestos(tmp_path)
+    if origem == "metadata":
+        caminho = tmp_path / "metadata.json"
+        metadata = json.loads(caminho.read_text())
+        metadata["schema_version"] = schema
+        arquivos.escrever_json(caminho, metadata)
+        manifestos[0]["outputs"][1]["sha256"] = arquivos.sha256_arquivo(caminho)
+    else:
+        manifestos[0 if origem == "modelo" else 1]["schema_version"] = schema
+    monkeypatch.setattr(servico, "carregar_pipeline", lambda _: pytest.fail("schema invalido"))
+    output = tmp_path / "run"
+    assert servico.processar(
+        tmp_path / "config.json", montar_config(), manifestos, "schema", output,
+    ) == cfg.CODIGO_ERRO
+    assert json.loads((output / "manifest.json").read_text())["outputs"] == []
+
+
+@pytest.mark.parametrize("campo", ["dataset_id", "model_id", "reference_id"])
+def test_metadata_divergente_bloqueia_inferencia(tmp_path: Path, monkeypatch, campo):
+    manifestos = preparar_manifestos(tmp_path)
+    caminho = tmp_path / "metadata.json"
+    metadata = json.loads(caminho.read_text())
+    metadata[campo] = "outro"
+    arquivos.escrever_json(caminho, metadata)
+    manifestos[0]["outputs"][1]["sha256"] = arquivos.sha256_arquivo(caminho)
+    monkeypatch.setattr(servico, "carregar_pipeline", lambda _: pytest.fail("identidade invalida"))
+    assert servico.processar(
+        tmp_path / "config.json", montar_config(), manifestos, "metadata", tmp_path / "run",
+    ) == cfg.CODIGO_ERRO

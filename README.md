@@ -603,3 +603,7 @@ já existente são recusados antes do início.
 
 A predição exige SHA-256 hexadecimal de 64 caracteres para pipeline, metadados
 e features. Ausência, formato inválido ou divergência bloqueiam o consumo.
+
+A predição exige igualdade exata do `schema_version` do treinamento, dos
+metadados e da simulação. Os metadados também devem corresponder ao
+`dataset_id`, `model_id` e `reference_id` do manifesto do treinamento.

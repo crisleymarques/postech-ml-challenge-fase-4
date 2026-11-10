@@ -40,6 +40,7 @@ def montar_metadata() -> dict:
     """Metadados compativeis com as features sinteticas."""
     return {
         "contract_version": "1.0",
+        "schema_version": "1.0",
         "model_id": "modelo-teste",
         "reference_id": "ref-teste",
         "dataset_id": "teste",
@@ -159,6 +160,7 @@ def preparar_manifestos(tmp_path: Path, estimador: object | None = None) -> list
         tmp_path / "man-treino.json",
         run_id="run-treino",
         stage="treinamento",
+        schema_version="1.0",
         dataset_id="teste",
         model_id="modelo-teste",
         reference_id="ref-teste",
@@ -178,3 +180,4 @@ def preparar_manifestos(tmp_path: Path, estimador: object | None = None) -> list
         outputs=[descritor("features", caminho_features, "run-simulacao")],
     )
     return [modelo, lote]
+
