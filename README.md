@@ -461,6 +461,15 @@ concorrentes. Uma colisão encerra com código `1`, preservando os CSVs e os
 manifestos anteriores. Use um novo identificador para repetir o cenário;
 a configuração é validada antes de iniciar a execução.
 
+Após reservar a execução, a simulação persiste `config.json` com os valores
+efetivos (inclusive a seed e os caminhos sobrepostos pela CLI) e o evento
+`started`. Falhas de leitura, transformação ou publicação encerram com código
+`1` e registram `failed`/`ERROR`, `error_code` sanitizado, métricas vazias e
+manifesto `status: failed` sem saídas aprovadas, sempre que a persistência
+estiver disponível. CSVs parciais não são liberados para consumo. O manifesto
+terminal é publicado por último; se a própria persistência de erro falhar,
+uma mensagem controlada é emitida em `stderr`, sem anunciar sucesso.
+
 ## Convenção de commits
 
 Os commits seguem o formato:

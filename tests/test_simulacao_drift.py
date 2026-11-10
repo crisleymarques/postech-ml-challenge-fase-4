@@ -357,3 +357,144 @@ def test_config_invalida_nao_reserva_diretorios(tmp_path: Path) -> None:
     assert sd.gerar(**parametros) == sd.CODIGO_ERRO
     assert not parametros["output_dir"].exists()
     assert not parametros["analysis_dir"].exists()
+
+
+@pytest.mark.parametrize("falha", ["origem_ausente", "csv_malformado"])
+def test_falha_de_leitura_publica_resultado_terminal(tmp_path: Path, capsys, falha: str) -> None:
+    parametros = parametros_geracao(tmp_path)
+    origem = parametros["source_path"]
+    if falha == "origem_ausente":
+        origem.unlink()
+    else:
+        origem.write_text('record_id,issue_d\n"dado-sigiloso-sem-fechamento', encoding="utf-8")
+    parametros["seed"] = 7
+
+    assert sd.gerar(**parametros) == sd.CODIGO_ERRO
+
+    output_dir = parametros["output_dir"]
+    manifesto = json.loads((output_dir / "manifest.json").read_text())
+    assert manifesto["status"] == "failed"
+    assert manifesto["error_code"] == "ERRO_ENTRADA"
+    assert manifesto["inputs"] == manifesto["outputs"] == []
+    assert manifesto["seed"] == 7
+    assert manifesto["finished_at"] >= manifesto["started_at"]
+    config = json.loads(Path(manifesto["config_path"]).read_text())
+    assert config["drift"]["seed"] == 7
+    assert config["base"]["path"] == origem.as_posix()
+    assert config["outputs"]["analysis_dir"] == parametros["analysis_dir"].as_posix()
+    eventos = [
+        json.loads(linha) for linha in (output_dir / "events.jsonl").read_text().splitlines()
+    ]
+    assert [evento["event"] for evento in eventos] == ["started", "failed"]
+    assert eventos[-1]["level"] == "ERROR"
+    assert eventos[-1]["error_code"] == manifesto["error_code"]
+    assert json.loads((output_dir / "metrics.json").read_text())["measurements"] == []
+    saida = capsys.readouterr()
+    assert saida.out == ""
+    assert "ERRO_ENTRADA" in saida.err
+    assert "dado-sigiloso" not in saida.err
+
+
+@pytest.mark.parametrize("arquivo", ["labels.csv", "metrics.json", "manifest.json"])
+def test_falha_de_publicacao_nao_aprova_artefatos(
+    tmp_path: Path, monkeypatch, arquivo: str
+) -> None:
+    parametros = parametros_geracao(tmp_path)
+    gravacoes = []
+    escrever_json = sd.escrever_json
+    escrever_csv = sd.escrever_artefato
+    falhou = False
+
+    def gravar_json(caminho, conteudo):
+        nonlocal falhou
+        if caminho.name == arquivo and not falhou:
+            falhou = True
+            # Simula inclusive um manifesto de sucesso escrito antes do erro.
+            escrever_json(caminho, conteudo)
+            raise OSError("Falha simulada com dado-sigiloso")
+        escrever_json(caminho, conteudo)
+        gravacoes.append(caminho.name)
+
+    def gravar_csv(caminho, base):
+        nonlocal falhou
+        if caminho.name == arquivo and not falhou:
+            falhou = True
+            raise OSError("Falha simulada com dado-sigiloso")
+        escrever_csv(caminho, base)
+
+    monkeypatch.setattr(sd, "escrever_json", gravar_json)
+    monkeypatch.setattr(sd, "escrever_artefato", gravar_csv)
+
+    assert sd.gerar(**parametros) == sd.CODIGO_ERRO
+    assert falhou
+    output_dir = parametros["output_dir"]
+    manifesto = json.loads((output_dir / "manifest.json").read_text())
+    assert manifesto["status"] == "failed"
+    assert manifesto["error_code"] == "ERRO_TECNICO"
+    assert manifesto["outputs"] == []
+    assert json.loads((output_dir / "metrics.json").read_text())["measurements"] == []
+    assert [
+        json.loads(linha)["event"]
+        for linha in (output_dir / "events.jsonl").read_text().splitlines()
+    ] == ["started", "failed"]
+    assert gravacoes[-1] == "manifest.json"
+
+
+def test_falha_persistente_reporta_erro_controlado(tmp_path: Path, monkeypatch, capsys) -> None:
+    parametros = parametros_geracao(tmp_path)
+
+    def falhar(caminho, conteudo):
+        raise OSError("dado-sigiloso")
+
+    monkeypatch.setattr(sd, "escrever_json", falhar)
+
+    assert sd.gerar(**parametros) == sd.CODIGO_ERRO
+    assert not (parametros["output_dir"] / "manifest.json").exists()
+    saida = capsys.readouterr()
+    assert saida.out == ""
+    assert "Falha ao persistir" in saida.err
+    assert "dado-sigiloso" not in saida.err
+
+
+def test_publicacao_de_sucesso_fecha_com_manifesto(tmp_path: Path, monkeypatch) -> None:
+    parametros = parametros_geracao(tmp_path)
+    parametros["seed"] = 7
+    gravacoes = []
+    escrever_json = sd.escrever_json
+    escrever_eventos = sd.escrever_eventos
+
+    def gravar_json(caminho, conteudo):
+        escrever_json(caminho, conteudo)
+        gravacoes.append(caminho.name)
+
+    def gravar_eventos(caminho, eventos):
+        escrever_eventos(caminho, eventos)
+        gravacoes.append(caminho.name)
+
+    monkeypatch.setattr(sd, "escrever_json", gravar_json)
+    monkeypatch.setattr(sd, "escrever_eventos", gravar_eventos)
+
+    assert sd.gerar(**parametros) == sd.CODIGO_SUCESSO
+    assert gravacoes[:2] == ["config.json", "events.jsonl"]
+    assert gravacoes[-1] == "manifest.json"
+    config = json.loads((parametros["output_dir"] / "config.json").read_text())
+    assert config["drift"]["seed"] == 7
+
+
+@pytest.mark.parametrize("configuracao", ["shift_ausente", "jitter_invalido", "tempo_invalido"])
+def test_config_invalida_para_manifesto_falha_antes_da_reserva(
+    tmp_path: Path, configuracao: str
+) -> None:
+    parametros = parametros_geracao(tmp_path)
+    config = montar_config()
+    if configuracao == "shift_ausente":
+        config["time"].pop("shift_months")
+    elif configuracao == "jitter_invalido":
+        config["drift"]["jitter"] = "invalido"
+    else:
+        config["time"] = "invalido"
+    escrever_config(tmp_path, config)
+
+    assert sd.gerar(**parametros) == sd.CODIGO_ERRO
+    assert not parametros["output_dir"].exists()
+    assert not parametros["analysis_dir"].exists()

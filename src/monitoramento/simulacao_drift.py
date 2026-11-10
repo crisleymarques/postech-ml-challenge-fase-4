@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -76,6 +77,8 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
     with caminho.open(encoding="utf-8") as arquivo:
         config = json.load(arquivo)
 
+    if not isinstance(config, dict):
+        raise ValueError("A configuracao deve ser um objeto JSON.")
     if versao_maior(config.get("contract_version")) != versao_maior(CONTRACT_VERSION):
         raise ValueError("Versao principal do contrato da configuracao incompativel.")
 
@@ -93,12 +96,36 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
     if ausentes:
         raise ValueError(f"Chaves ausentes na configuracao: {ausentes}")
 
+    campos = {
+        "base": ("path",),
+        "time": ("column", "format", "shift_months"),
+        "target": ("column",),
+        "drift": ("seed", "variables"),
+        "outputs": ("analysis_dir",),
+    }
+    for secao, chaves in campos.items():
+        if not isinstance(config[secao], dict) or any(
+            chave not in config[secao] for chave in chaves
+        ):
+            raise ValueError(f"Configuracao incompleta na secao {secao}.")
+    int(config["time"]["shift_months"])
+    if int(config["drift"]["seed"]) < 0:
+        raise ValueError("A seed deve ser nao negativa.")
+    jitter = float(config["drift"].get("jitter", 0.0))
+    if not math.isfinite(jitter) or jitter < 0:
+        raise ValueError("O jitter deve ser finito e nao negativo.")
+    config["drift"]["jitter"] = jitter
+
     variaveis = config["drift"].get("variables", {})
+    if not isinstance(variaveis, dict):
+        raise ValueError("As variaveis de drift devem formar um objeto JSON.")
     if len(variaveis) < MINIMO_VARIAVEIS:
         raise ValueError(
             f"A simulacao de Data Drift exige ao menos {MINIMO_VARIAVEIS} variaveis alteradas."
         )
     for coluna, especificacao in variaveis.items():
+        if not isinstance(especificacao, dict):
+            raise ValueError(f"Especificacao invalida para {coluna}.")
         operacao = especificacao.get("operation")
         if operacao not in OPERACOES:
             raise ValueError(
@@ -250,29 +277,32 @@ def montar_manifesto(
     config: dict[str, Any],
     batch_id: str,
     seed: int,
-    entrada: dict[str, Any],
+    entrada: dict[str, Any] | None,
     saidas: list[dict[str, Any]],
-    periodo: dict[str, Any],
+    periodo: dict[str, Any] | None,
     descritas: list[dict[str, Any]],
+    status: str = "success",
+    error_code: str | None = None,
 ) -> dict[str, Any]:
     """Reune o manifesto comum do produtor do cenario simulado."""
     variaveis = sorted(descritas, key=lambda item: item["column"])
-    transformacoes = [
-        (f"deslocamento temporal de {periodo['column']} em {periodo['shift_months']} meses"),
-        *(
-            f"{item['operation']} em {item['column']} (parametro {item['parameter']})"
-            for item in variaveis
-        ),
-    ]
+    transformacoes = (
+        [f"deslocamento temporal de {periodo['column']} em {periodo['shift_months']} meses"]
+        if periodo else []
+    )
+    transformacoes.extend(
+        f"{item['operation']} em {item['column']} (parametro {item['parameter']})"
+        for item in variaveis
+    )
     return {
         "contract_version": CONTRACT_VERSION,
         "run_id": run_id,
         "stage": STAGE,
-        "status": "success",
+        "status": status,
         "started_at": iniciado,
         "finished_at": finalizado,
         "config_path": config_path.as_posix(),
-        "inputs": [entrada],
+        "inputs": [entrada] if entrada else [],
         "outputs": saidas,
         "dataset_id": config.get("dataset_id"),
         "schema_version": config.get("schema_version"),
@@ -286,10 +316,10 @@ def montar_manifesto(
         "transformacoes": transformacoes,
         "parametros": {
             "jitter": float(config["drift"].get("jitter", 0.0)),
-            "shift_months": int(periodo["shift_months"]),
+            "shift_months": int(periodo["shift_months"]) if periodo else None,
             "variables": {item["column"]: item for item in variaveis},
         },
-        "error_code": None,
+        "error_code": error_code,
     }
 
 
@@ -337,6 +367,14 @@ def gerar(
         scenario_id = config["scenario_id"]
         destino = (analysis_dir or Path(config["outputs"]["analysis_dir"])) / scenario_id / batch_id
         semente = int(seed if seed is not None else config["drift"]["seed"])
+        if semente < 0:
+            raise ValueError("A seed deve ser nao negativa.")
+        origem = source_path or Path(config["base"]["path"])
+        config["drift"]["seed"] = semente
+        config["base"]["path"] = origem.as_posix()
+        config["outputs"]["analysis_dir"] = (
+            analysis_dir or Path(config["outputs"]["analysis_dir"])
+        ).as_posix()
     except (ErroSimulacao, ValueError, TypeError, KeyError, OSError) as erro:
         print(f"Configuracao invalida ({type(erro).__name__}).", file=sys.stderr)
         return CODIGO_ERRO
@@ -353,11 +391,12 @@ def gerar(
 
     iniciado = agora_iso()
     eventos: list[dict[str, Any]] = []
+    config_efetiva = output_dir / "config.json"
+    registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "started", "INFO")
     try:
+        escrever_json(config_efetiva, config)
+        escrever_eventos(output_dir / "events.jsonl", eventos)
         destino.mkdir(parents=True, exist_ok=False)
-        registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "started", "INFO")
-
-        origem = source_path or Path(config["base"]["path"])
         base = carregar_base(origem)
 
         tempo = config["time"]
@@ -406,8 +445,6 @@ def gerar(
             "shift_months": int(tempo["shift_months"]),
         }
 
-        escrever_json(output_dir / "config.json", config)
-        escrever_eventos(output_dir / "events.jsonl", eventos)
         escrever_json(
             output_dir / "metrics.json",
             {
@@ -419,7 +456,7 @@ def gerar(
             run_id=run_id,
             iniciado=iniciado,
             finalizado=agora_iso(),
-            config_path=config_path,
+            config_path=config_efetiva,
             config=config,
             batch_id=batch_id,
             seed=semente,
@@ -428,11 +465,54 @@ def gerar(
             periodo=periodo,
             descritas=descritas,
         )
-        escrever_json(output_dir / "manifest.json", manifesto)
         registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "completed", "INFO")
         escrever_eventos(output_dir / "events.jsonl", eventos)
-    except (ErroSimulacao, ValueError, OSError) as erro:
-        print(f"Falha ao gerar o cenario simulado: {erro}")
+        # O manifesto terminal fecha a publicacao: nenhuma persistencia ocorre depois.
+        escrever_json(output_dir / "manifest.json", manifesto)
+    except Exception as erro:
+        eventos[:] = [evento for evento in eventos if evento["event"] != "completed"]
+        error_code = (
+            "ERRO_ENTRADA"
+            if isinstance(
+                erro, (ErroSimulacao, ValueError, pd.errors.ParserError, FileNotFoundError)
+            )
+            else "ERRO_TECNICO"
+        )
+        registrar_evento(
+            eventos, run_id, dataset_id, scenario_id, batch_id, "failed", "ERROR", error_code
+        )
+        try:
+            # O diretorio foi reservado por esta chamada; nunca toca execucoes anteriores.
+            (output_dir / "manifest.json").unlink(missing_ok=True)
+            escrever_json(config_efetiva, config)
+            escrever_eventos(output_dir / "events.jsonl", eventos)
+            escrever_json(output_dir / "metrics.json", {"run_id": run_id, "measurements": []})
+            manifesto = montar_manifesto(
+                run_id=run_id,
+                iniciado=iniciado,
+                finalizado=agora_iso(),
+                config_path=config_efetiva,
+                config=config,
+                batch_id=batch_id,
+                seed=semente,
+                entrada=None,
+                saidas=[],
+                periodo=None,
+                descritas=[],
+                status="failed",
+                error_code=error_code,
+            )
+            escrever_json(output_dir / "manifest.json", manifesto)
+        except OSError as persist_erro:
+            print(
+                f"Falha ao persistir resultado de erro ({type(persist_erro).__name__}).",
+                file=sys.stderr,
+            )
+            return CODIGO_ERRO
+        print(
+            f"Falha ao gerar o cenario simulado ({error_code}): {type(erro).__name__}.",
+            file=sys.stderr,
+        )
         return CODIGO_ERRO
 
     print(f"Cenario simulado ({scenario_id}): {len(features)} linhas")
