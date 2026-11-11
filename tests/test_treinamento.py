@@ -363,8 +363,9 @@ def test_fluxo_preparacao_validacao_treinamento_aprovado(tmp_path: Path) -> None
     assert codigo == treino.CODIGO_SUCESSO
     manifesto_treino = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     metadados = json.loads(
-        (Path(config["outputs"]["models_dir"]) / manifesto_treino["model_id"] / "metadata.json")
-        .read_text(encoding="utf-8")
+        (
+            Path(config["outputs"]["models_dir"]) / manifesto_treino["model_id"] / "metadata.json"
+        ).read_text(encoding="utf-8")
     )
     assert metadados["schema_version"] == config["schema_version"]
     assert metadados["quality_validation_run_id"] == "validacao-run-1"
@@ -544,13 +545,18 @@ def test_cli_serializa_pipeline_carregavel_em_outro_processo(tmp_path: Path) -> 
         [str(raiz / "src"), *filter(None, [os.environ.get("PYTHONPATH")])]
     )
     carregar = subprocess.run(
-        [sys.executable, "-c", (
-            "import joblib, pandas as pd, sys; "
-            "m=joblib.load(sys.argv[1]); "
-            "assert len(m.predict_proba(pd.DataFrame({'loan_amnt':['20000'],"
-            "'annual_inc':['50000'], 'term':['36 months'],"
-            "'purpose':['credit_card']}))) == 1"
-        ), str(pipeline)],
+        [
+            sys.executable,
+            "-c",
+            (
+                "import joblib, pandas as pd, sys; "
+                "m=joblib.load(sys.argv[1]); "
+                "assert len(m.predict_proba(pd.DataFrame({'loan_amnt':['20000'],"
+                "'annual_inc':['50000'], 'term':['36 months'],"
+                "'purpose':['credit_card']}))) == 1"
+            ),
+            str(pipeline),
+        ],
         cwd=raiz,
         env=env,
         capture_output=True,
@@ -585,9 +591,7 @@ def test_execucoes_nao_sobrescrevem_modelo_ou_referencia(tmp_path: Path) -> None
         particoes[name].to_csv(path, index=False)
         item = next(x for x in manifesto["inputs"] if x["artifact_type"] == name)
         item["sha256"] = treino.sha256_arquivo(path)
-        aprovado = next(
-            x for x in manifesto["quality"]["artifacts"] if x["artifact_type"] == name
-        )
+        aprovado = next(x for x in manifesto["quality"]["artifacts"] if x["artifact_type"] == name)
         aprovado["sha256"] = item["sha256"]
     segunda = executar("immutable-2")
 

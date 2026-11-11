@@ -1,11 +1,12 @@
 """Publicacao terminal e preservacao dos artefatos da analise."""
+
 import json
 from pathlib import Path
 
 import pytest
 
 from monitoramento.drift.analise import servico
-from monitoramento.logs import gerar
+from monitoramento.observabilidade.logs import gerar
 
 from .apoio import montar_config, preparar_manifestos
 
@@ -130,9 +131,10 @@ def test_manifesto_de_sucesso_publicado_apos_eventos(tmp_path: Path, monkeypatch
         nonlocal observado
         assert manifesto["status"] == "success"
         assert not caminho.exists()
-        assert all((output / nome).is_file() for nome in (
-            "config.json", "analise.json", "metrics.json", "events.jsonl"
-        ))
+        assert all(
+            (output / nome).is_file()
+            for nome in ("config.json", "analise.json", "metrics.json", "events.jsonl")
+        )
         eventos = [
             json.loads(linha) for linha in (output / "events.jsonl").read_text().splitlines()
         ]

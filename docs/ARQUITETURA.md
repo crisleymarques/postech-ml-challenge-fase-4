@@ -94,10 +94,10 @@ flowchart TD
 | `drift/deteccao/` | Comparar referência e lote com Evidently; avaliar desempenho somente com rótulos compatíveis | Referência, lote aprovado, predições e configuração de detecção | Resultados estatísticos, alertas e HTML |
 | `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
 | `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
-| `logs.py` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
-| `metricas_saude.py` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
-| `alertas.py` | Integrar logs, métricas de saúde e resultados de drift; sinalizar falhas e degradação | `reports/saude/saude.json`, `reports/logs/resumo.json` e catálogo de alertas | Alertas classificáveis e contáveis, bloco consolidado de drift e resumo (`alertas.json`) |
-| `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
+| `observabilidade/logs/` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
+| `observabilidade/metricas_saude/` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
+| `observabilidade/alertas/` | Integrar logs, métricas de saúde e resultados de drift; sinalizar falhas e degradação | `reports/saude/saude.json`, `reports/logs/resumo.json` e catálogo de alertas | Alertas classificáveis e contáveis, bloco consolidado de drift e resumo (`alertas.json`) |
+| `observabilidade/dashboard/` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
 aprende imputação, escalas, codificações ou seleção de variáveis a partir do
@@ -318,7 +318,7 @@ Cada etapa usa o mesmo contrato de evento: `timestamp`, `run_id`, `stage`,
 `drift_alert`; `level` admite `INFO`, `WARNING` e `ERROR`. A validação inclui
 eventos de falha mesmo quando nenhum artefato de dados for aprovado.
 
-O componente `logs.py` consolida os `events.jsonl` de todas as execuções em
+O componente `observabilidade/logs/` consolida os `events.jsonl` de todas as execuções em
 `reports/logs/operacional.jsonl` e publica `reports/logs/resumo.json` com a
 contagem por status de execução, por categoria operacional e por resultado, a
 lista de falhas (com `error_code`) e a lista de alertas. Cada evento recebe uma
@@ -342,7 +342,7 @@ O catálogo de métricas de saúde operacional está definido em
 `categoria`, `nome`, `semantica`, `unidade`, `escopo` (`execucao` ou
 `agregado`), `etapas` (nulo quando aplicável a todas), `coleta`, `criterio`,
 `direcao` (`maior_pior` ou `menor_pior`) e os limiares `limiar_degracao` e
-`limiar_falha`. O componente `metricas_saude.py` coleta os valores dos
+`limiar_falha`. O componente `observabilidade/metricas_saude/` coleta os valores dos
 artefatos persistidos, marca a disponibilidade e classifica cada medida em
 `ok`, `atencao`, `critico`, `indisponivel` ou `nao_aplicavel`. A sinalização e
 o alerta efetivos ficam na integração do F3-03; esta etapa apenas coleta e
@@ -369,7 +369,7 @@ Em métricas `menor_pior`, a situação muda apenas abaixo do limiar; em
 sem expor JSON parcial aos consumidores nem perder a versão anterior caso a
 atualização falhe.
 
-O componente `alertas.py` integra logs, métricas de saúde e resultados de drift
+O componente `observabilidade/alertas/` integra logs, métricas de saúde e resultados de drift
 em um único artefato. Ele lê os relatórios já consolidados
 (`reports/saude/saude.json` e `reports/logs/resumo.json`) e aplica os critérios
 declarados em `configs/alertas.json`: medida com situação `atencao` gera alerta
@@ -391,7 +391,7 @@ em contratos válidos são aceitas. A integração
 não altera as etapas anteriores e não converte alerta em erro: código `0` no
 sucesso e `1` em falha técnica.
 
-O componente `dashboard.py` é o painel Streamlit que reúne os resultados
+O componente `observabilidade/dashboard/` é o painel Streamlit que reúne os resultados
 persistidos. Ele lê os diretórios de execução (`reports/runs/<run_id>/`,
 manifesto e eventos) e os artefatos consolidados dos F3-01/02/03, com os
 caminhos das fontes configuráveis na barra lateral. A interface organiza a

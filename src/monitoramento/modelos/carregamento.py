@@ -1,4 +1,5 @@
 """Carregamento de pipelines e compatibilidade com conversores persistidos."""
+
 from __future__ import annotations
 
 import sys

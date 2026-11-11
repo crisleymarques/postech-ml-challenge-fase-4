@@ -832,7 +832,7 @@ uv run pytest tests/simulacao/concept_drift tests/avaliacao/concept_drift -q
 
 ## Logs operacionais centralizados — F3-01
 
-O componente [src/monitoramento/logs.py](src/monitoramento/logs.py) consolida os
+O componente [src/monitoramento/observabilidade/logs/](src/monitoramento/observabilidade/logs/) consolida os
 `events.jsonl` que cada etapa publica em `reports/runs/<run_id>/`, seguindo o
 contrato comum de evento. Cada evento é classificado por categoria operacional
 (ingestão, transformação, validação, treinamento, simulação, predição, drift e
@@ -840,7 +840,7 @@ avaliação) e por resultado (início, sucesso, rejeição, falha, alerta e
 ignorado), sem alterar as etapas existentes — apenas agrega o que já é emitido.
 
 ```powershell
-uv run python src/monitoramento/logs.py --runs-dir reports/runs --output-dir reports/logs
+uv run python -m monitoramento.observabilidade.logs --runs-dir reports/runs --output-dir reports/logs
 ```
 
 | Artefato | Local |
@@ -867,7 +867,7 @@ Na execução real sobre as 11 execuções registradas, o log consolidou 25 even
 alertas de drift.
 
 ```powershell
-uv run pytest tests/test_logs.py -q
+uv run pytest tests/observabilidade/logs/ -q
 ```
 
 ## Métricas de saúde operacional — F3-02
@@ -880,7 +880,7 @@ métrica declara `id`, `categoria`, `nome`, `semantica`, `unidade`, `escopo`
 `limiar_degracao` e `limiar_falha`. São 15 métricas em 5 categorias: pipeline,
 qualidade, drift, modelo e infraestrutura local.
 
-O componente [src/monitoramento/metricas_saude.py](src/monitoramento/metricas_saude.py)
+O componente [src/monitoramento/observabilidade/metricas_saude/](src/monitoramento/observabilidade/metricas_saude/)
 lê os artefatos persistidos de cada execução — manifesto, `metrics.json`,
 `quality.json`, `drift.json`, `analise.json` e `performance.json` —, coleta os
 valores, marca a disponibilidade e classifica cada medida em `ok`, `atencao`,
@@ -888,7 +888,7 @@ valores, marca a disponibilidade e classifica cada medida em `ok`, `atencao`,
 ficam na integração do F3-03; esta etapa apenas coleta e classifica.
 
 ```powershell
-uv run python src/monitoramento/metricas_saude.py --runs-dir reports/runs --output-dir reports/saude
+uv run python -m monitoramento.observabilidade.metricas_saude --runs-dir reports/runs --output-dir reports/saude
 ```
 
 | Artefato | Local |
@@ -914,12 +914,12 @@ Na execução real sobre as 11 execuções registradas, foram coletadas 48 medid
 `modelo.roc_auc = 0,461174` (`run-f205-avaliacao`) em estado crítico.
 
 ```powershell
-uv run pytest tests/test_metricas_saude.py -q
+uv run pytest tests/observabilidade/metricas_saude/ -q
 ```
 
 ## Integração de drift, métricas e alertas — F3-03
 
-O componente [src/monitoramento/alertas.py](src/monitoramento/alertas.py) integra
+O componente [src/monitoramento/observabilidade/alertas/](src/monitoramento/observabilidade/alertas/) integra
 os artefatos já consolidados — as métricas de saúde (`reports/saude/saude.json`,
 F3-02) e os logs operacionais (`reports/logs/resumo.json`, F3-01) — e aplica os
 critérios declarados em [configs/alertas.json](configs/alertas.json):
@@ -930,7 +930,7 @@ critérios declarados em [configs/alertas.json](configs/alertas.json):
 - evento `drift_alert` registrado nos logs gera alerta `warning`.
 
 ```powershell
-uv run python src/monitoramento/alertas.py --saude reports/saude/saude.json --logs-resumo reports/logs/resumo.json --config configs/alertas.json --output-dir reports/alertas
+uv run python -m monitoramento.observabilidade.alertas --saude reports/saude/saude.json --logs-resumo reports/logs/resumo.json --config configs/alertas.json --output-dir reports/alertas
 ```
 
 | Artefato | Local |
@@ -965,19 +965,19 @@ Na execução real sobre os relatórios consolidados, foram integrados 14 alerta
 13 variáveis com drift, proporção 0,590909 e 3 alertas de drift.
 
 ```powershell
-uv run pytest tests/test_alertas.py tests/test_alertas_regressoes.py -q
+uv run pytest tests/observabilidade/alertas/ tests/observabilidade/integracao/test_saude_alertas_regressoes.py -q
 ```
 
 ## Dashboard de monitoramento — F3-04
 
-O componente [src/monitoramento/dashboard.py](src/monitoramento/dashboard.py) é o
+O componente [src/monitoramento/observabilidade/dashboard/app.py](src/monitoramento/observabilidade/dashboard/app.py) é o
 painel Streamlit que reúne os resultados persistidos pelas etapas anteriores. Ele
 lê os eventos e manifestos de cada execução em `reports/runs/<run_id>/` e os
 artefatos consolidados — logs operacionais (F3-01), métricas de saúde (F3-02) e
 alertas integrados (F3-03) — sem executar treino nem alterar dados.
 
 ```powershell
-uv run streamlit run src/monitoramento/dashboard.py
+uv run streamlit run src/monitoramento/observabilidade/dashboard/app.py
 ```
 
 Os caminhos das fontes são configuráveis na barra lateral; por padrão:
@@ -1004,7 +1004,7 @@ aparecem como indisponíveis; seus indicadores exibem `—`. Zero é exibido ape
 quando confirmado por um relatório válido.
 
 ```powershell
-uv run pytest tests/test_dashboard.py tests/test_dashboard_resiliencia.py tests/test_alertas_dashboard_regressoes.py -q
+uv run pytest tests/observabilidade/dashboard/ tests/observabilidade/integracao/test_alertas_dashboard_regressoes.py -q
 ```
 
 ## Convenção de commits
@@ -1083,21 +1083,21 @@ Concluídos:
 
 - Consolidação dos logs operacionais (F3-01), com classificação dos eventos por
   categoria e resultado, resumo de sucessos, falhas de contrato e alertas em
-  `reports/logs/` e testes em `tests/test_logs.py`.
+  `reports/logs/` e testes em `tests/observabilidade/logs/`.
 - Definição e coleta das métricas de saúde operacional (F3-02), com catálogo de
   15 métricas em 5 categorias, coleta a partir dos artefatos persistidos,
   classificação por situação com dois níveis de limiar (`atencao`/`critico`),
   medidas em `reports/saude/saude.json` e testes em
-  `tests/test_metricas_saude.py`.
+  `tests/observabilidade/metricas_saude/`.
 - Integração de drift, métricas e alertas (F3-03), com critérios de alerta em
   `configs/alertas.json`, sinalização de falhas e degradação com severidade,
   bloco consolidado de drift, alertas identificáveis e contabilizáveis em
-  `reports/alertas/alertas.json` e testes em `tests/test_alertas.py`.
+  `reports/alertas/alertas.json` e testes em `tests/observabilidade/alertas/`.
 - Dashboard de monitoramento (F3-04), com painel Streamlit em abas por tema
   (visão geral, saúde operacional, drift, alertas e logs), fontes configuráveis
   na barra lateral, tratamento de artefatos ausentes como `indisponivel` e de
   execuções sem evento terminal como incompletas, e testes das funções de carga
-  e agregação em `tests/test_dashboard.py`.
+  e agregação em `tests/observabilidade/dashboard/`.
 - Governança de dados e conformidade com a LGPD (F4-01), com inventário e
   classificação dos dados pessoais, base legal da decisão de crédito (Art. 7º,
   X e IX; Art. 20), medidas de tratamento e proteção de PII, plano de retenção e

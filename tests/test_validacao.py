@@ -265,8 +265,7 @@ def test_perfil_producao_aprova_features_sem_alvo_e_preserva_ids(tmp_path: Path)
     assert manifesto_saida["scenario_id"] == "controle"
     assert manifesto_saida["batch_id"] == "lote-1"
     eventos = [
-        json.loads(linha)
-        for linha in (output_dir / "events.jsonl").read_text().splitlines()
+        json.loads(linha) for linha in (output_dir / "events.jsonl").read_text().splitlines()
     ]
     assert all(evento["scenario_id"] == "controle" for evento in eventos)
     assert all(evento["batch_id"] == "lote-1" for evento in eventos)
@@ -449,9 +448,7 @@ def test_processar_falha_com_dataset_incompativel(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("metadata", [None, {"column": "loan_status", "positive_value": 1}])
-def test_processar_exige_contrato_semantico_do_alvo(
-    tmp_path: Path, metadata: dict | None
-) -> None:
+def test_processar_exige_contrato_semantico_do_alvo(tmp_path: Path, metadata: dict | None) -> None:
     config = montar_config(tmp_path)
     escrever_particoes(tmp_path)
     manifesto = json.loads(escrever_manifesto(tmp_path, config).read_text(encoding="utf-8"))

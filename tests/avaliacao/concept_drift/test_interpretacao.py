@@ -1,4 +1,5 @@
 """Testes de interpretacao de Concept Drift."""
+
 from __future__ import annotations
 
 import pytest

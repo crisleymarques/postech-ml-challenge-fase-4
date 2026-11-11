@@ -180,9 +180,7 @@ def resolver_particoes(
         if colunas_manifesto != colunas_arquivo:
             raise ErroArtefato(f"Schema efetivo divergente para a particao {nome}.")
         if config is not None:
-            features = list(config["features"]["numeric"]) + list(
-                config["features"]["categorical"]
-            )
+            features = list(config["features"]["numeric"]) + list(config["features"]["categorical"])
             necessarias = {*features, config["features"].get("identifier", IDENTIFICADOR)}
             necessarias.add(config["target"]["column"])
             colunas = set(colunas_arquivo)
