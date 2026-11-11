@@ -64,8 +64,16 @@ def montar_documento(
 ) -> dict[str, Any]:
     """Reune o documento de drift com ferramenta, metodo, amostras e resultados."""
     detectadas = [variavel for variavel in alteradas if variavel in resumo["drifted_features"]]
+    por_feature = {item["feature"]: item for item in resultados}
     nao_detectadas = [
-        variavel for variavel in alteradas if variavel not in resumo["drifted_features"]
+        variavel
+        for variavel in alteradas
+        if por_feature.get(variavel, {}).get("drift_detected") is False
+    ]
+    nao_avaliadas = [
+        variavel
+        for variavel in alteradas
+        if por_feature.get(variavel, {}).get("drift_detected") is None
     ]
     return {
         "contract_version": CONTRACT_VERSION,
@@ -92,6 +100,7 @@ def montar_documento(
             "configured": list(alteradas),
             "detected": detectadas,
             "not_detected": nao_detectadas,
+            "not_evaluated": nao_avaliadas,
         },
     }
 
@@ -111,13 +120,15 @@ def montar_manifesto(
     entradas: list[dict[str, Any]],
     saidas: list[dict[str, Any]],
     resumo: dict[str, Any],
+    status: str = "success",
+    error_code: str | None = None,
 ) -> dict[str, Any]:
     """Reune o manifesto comum do produtor da deteccao."""
     return {
         "contract_version": CONTRACT_VERSION,
         "run_id": run_id,
         "stage": STAGE,
-        "status": "success",
+        "status": status,
         "started_at": iniciado,
         "finished_at": finalizado,
         "config_path": config_path.as_posix(),
@@ -131,5 +142,5 @@ def montar_manifesto(
         "batch_id": batch_id,
         "tool": {"name": "evidently", "version": VERSAO_EVIDENTLY},
         "drift": resumo,
-        "error_code": None,
+        "error_code": error_code,
     }

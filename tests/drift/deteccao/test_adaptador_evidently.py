@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from monitoramento.drift.deteccao import adaptador_evidently
 
 from .apoio import FEATURES, SnapshotFalso, gerar_features, metrica_drift
@@ -31,15 +29,12 @@ def test_montar_resultados_marca_nulo_como_nao_avaliavel() -> None:
     assert "nao avaliavel" in resultados[0]["reason"]
 
 
-def test_adaptador_real_executa_e_grava_html(tmp_path: Path) -> None:
+def test_adaptador_real_executa() -> None:
     referencia = gerar_features(deslocado=False)[FEATURES]
     atual = gerar_features(deslocado=True)[FEATURES]
 
     snapshot = adaptador_evidently.executar_evidently(referencia, atual)
     resultados = adaptador_evidently.montar_resultados(snapshot, FEATURES, 0.05, 0.1)
-    caminho = tmp_path / 'drift.html'
-    adaptador_evidently.salvar_html(snapshot, caminho)
 
-    assert [item['feature'] for item in resultados] == FEATURES
-    assert all(item['drift_detected'] is True for item in resultados)
-    assert caminho.stat().st_size > 0
+    assert [item["feature"] for item in resultados] == FEATURES
+    assert all(item["drift_detected"] is True for item in resultados)

@@ -29,6 +29,6 @@ def resumir(resultados: list[dict[str, Any]]) -> dict[str, Any]:
         "evaluated_columns": total,
         "drifted_columns": len(com_drift),
         "drift_share": proporcao,
-        "dataset_drift": bool(proporcao is not None and proporcao > 0.5),
+        "dataset_drift": bool(total and len(com_drift) / total > 0.5),
         "drifted_features": [item["feature"] for item in com_drift],
     }
