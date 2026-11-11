@@ -7,8 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import CODIGO_ERRO, ErroAnalise, ErroConfiguracao, carregar_config
-from .entradas import carregar_manifesto
+from .config import CODIGO_ERRO, ErroConfiguracao, carregar_config
 from .servico import processar
 
 
@@ -44,19 +43,13 @@ def main() -> None:
         print("Informe dois manifestos via --input-manifest (um do treinamento e um da simulacao).")
         sys.exit(CODIGO_ERRO)
 
-    try:
-        manifestos = [carregar_manifesto(caminho) for caminho in entradas]
-    except ErroAnalise as erro:
-        print(f"Falha na analise: {erro}")
-        sys.exit(CODIGO_ERRO)
-
     run_id = args.run_id or datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%S%fZ")
     output_dir = args.output_dir or Path("reports/runs") / run_id
     if output_dir.exists():
         print(f"Diretorio de execucao ja existe: {output_dir}")
         sys.exit(CODIGO_ERRO)
 
-    sys.exit(processar(args.config, config, manifestos, run_id, output_dir))
+    sys.exit(processar(args.config, config, entradas, run_id, output_dir))
 
 
 if __name__ == "__main__":

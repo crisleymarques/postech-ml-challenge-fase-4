@@ -135,14 +135,16 @@ def montar_manifesto(
     batch_id: str | None,
     entradas: list[dict[str, Any]],
     saidas: list[dict[str, Any]],
-    resumo: dict[str, Any],
+    resumo: dict[str, Any] | None = None,
+    status: str = "success",
+    error_code: str | None = None,
 ) -> dict[str, Any]:
     """Reune o manifesto comum do produtor da analise."""
     return {
         "contract_version": CONTRACT_VERSION,
         "run_id": run_id,
         "stage": STAGE,
-        "status": "success",
+        "status": status,
         "started_at": iniciado,
         "finished_at": finalizado,
         "config_path": config_path.as_posix(),
@@ -155,6 +157,6 @@ def montar_manifesto(
         "scenario_id": scenario_id,
         "batch_id": batch_id,
         "tool": {"name": "scipy", "version": scipy.__version__},
-        "analysis": resumo,
-        "error_code": None,
+        "analysis": resumo or {},
+        "error_code": error_code,
     }

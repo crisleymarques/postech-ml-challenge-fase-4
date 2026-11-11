@@ -3,15 +3,31 @@
 from __future__ import annotations
 
 from functools import partial
+from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from monitoramento.infraestrutura import manifestos
 
 from .config import CONTRACT_VERSION, ErroAnalise
 
-carregar_manifesto = partial(
-    manifestos.carregar_manifesto, erro=ErroAnalise, contract_version=CONTRACT_VERSION
-)
+
+def carregar_manifesto(entrada: Path | dict[str, Any]) -> dict[str, Any]:
+    """Resolve caminhos e valida tambem manifestos recebidos pela API Python."""
+    if isinstance(entrada, Path):
+        return manifestos.carregar_manifesto(
+            entrada, erro=ErroAnalise, contract_version=CONTRACT_VERSION
+        )
+    if not isinstance(entrada, dict) or entrada.get("status") != "success":
+        raise ErroAnalise("Produtor nao concluiu com sucesso.")
+    if manifestos.versao_maior(entrada.get("contract_version")) != manifestos.versao_maior(
+        CONTRACT_VERSION
+    ):
+        raise ErroAnalise("Versao principal do contrato do manifesto incompativel.")
+    return entrada
+
+
 artefato = partial(manifestos.artefato, erro=ErroAnalise)
 verificar_artefato = partial(manifestos.verificar_artefato, erro=ErroAnalise)
 
@@ -49,3 +65,13 @@ def verificar_compatibilidade(
                 f"dataset_id divergente no manifesto {manifesto.get('run_id')}: "
                 f"{manifesto.get('dataset_id')} != {dataset_id}"
             )
+
+
+def validar_features_esperadas(
+    referencia: pd.DataFrame, atual: pd.DataFrame, colunas: list[str]
+) -> None:
+    """Exige cobertura integral das features do modelo nas duas entradas."""
+    for papel, base in (("referencia", referencia), ("lote", atual)):
+        ausentes = [coluna for coluna in colunas if coluna not in base.columns]
+        if ausentes:
+            raise ErroAnalise(f"Features ausentes na entrada {papel}: {ausentes}")

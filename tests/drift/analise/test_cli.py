@@ -55,3 +55,29 @@ def test_cli_publica_analise_estatistica(tmp_path: Path) -> None:
     documento = json.loads((output / "analise.json").read_text())
     assert documento["summary"]["changed_columns"] == 5
     assert set(documento["changed_variables"]["confirmed"]) == {"annual_inc", "dti", "revol_util"}
+
+
+def test_cli_manifesto_ausente_registra_falha(tmp_path: Path) -> None:
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps(montar_config()))
+    output = tmp_path / "run"
+    resultado = executar_cli(
+        "--config", str(config),
+        "--input-manifest", str(tmp_path / "ausente-a.json"),
+        "--input-manifest", str(tmp_path / "ausente-b.json"),
+        "--output-dir", str(output),
+    )
+    assert resultado.returncode == 1
+    manifesto = json.loads((output / "manifest.json").read_text())
+    assert manifesto["status"] == "failed"
+    assert manifesto["outputs"] == []
+
+
+def test_cli_config_invalida_nao_inicia_execucao(tmp_path: Path) -> None:
+    config = tmp_path / "config.json"
+    config.write_text("{")
+    output = tmp_path / "run"
+    resultado = executar_cli("--config", str(config), "--output-dir", str(output))
+    assert resultado.returncode == 1
+    assert "Traceback" not in resultado.stderr
+    assert not output.exists()

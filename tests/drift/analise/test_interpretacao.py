@@ -111,3 +111,21 @@ def test_montar_conclusoes_registra_confirmadas_e_ressalva() -> None:
     texto = " ".join(conclusoes)
     assert "revol_util" in texto
     assert "nao comprova" in texto
+
+
+def test_ks_independe_de_psi_com_referencia_constante() -> None:
+    for valor_atual, drift in [(0, False), (1, True)]:
+        resultado = interpretacao.analisar_variavel(
+            "delinq_2yrs", "numeric", pd.Series([0] * 400), pd.Series([valor_atual] * 400),
+            bins=10, psi_moderado=0.1, psi_limiar=0.25, ks_p=0.05, ks_limiar=0.1,
+        )
+        assert resultado["psi"] is None
+        assert resultado["psi_band"] is None
+        assert resultado["ks_statistic"] == float(valor_atual)
+        assert resultado["ks_p_value"] is not None
+        assert resultado["drift_detected"] is drift
+        assert "quantis" in " ".join(resultado["reasons"])
+        resumo = interpretacao.resumir([resultado])
+        assert resumo["evaluated_columns"] == 1
+        assert resumo["changed_columns"] == int(drift)
+        assert resumo["psi_maximo"] is None
