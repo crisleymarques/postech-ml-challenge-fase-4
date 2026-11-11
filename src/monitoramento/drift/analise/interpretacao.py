@@ -42,16 +42,18 @@ def analisar_variavel(
         valor_psi = psi_categorico(referencia, atual)
         teste = None
 
-    if valor_psi is None:
-        resultado["reasons"] = ["PSI nao calculavel por falta de dados validos"]
-        return resultado
-
-    resultado["psi"] = round(valor_psi, 6)
-    resultado["psi_band"] = faixa_psi(valor_psi, psi_moderado, psi_limiar)
-
     motivos: list[str] = []
-    if valor_psi >= psi_limiar:
-        motivos.append(f"PSI {valor_psi:.4f} >= limiar {psi_limiar}")
+    indisponiveis: list[str] = []
+    if valor_psi is None:
+        motivo = "PSI nao calculavel por falta de dados validos"
+        if tipo == TIPO_NUMERICO and teste is not None:
+            motivo = "PSI nao calculavel: quantis insuficientes na referencia"
+        indisponiveis.append(motivo)
+    else:
+        resultado["psi"] = round(valor_psi, 6)
+        resultado["psi_band"] = faixa_psi(valor_psi, psi_moderado, psi_limiar)
+        if valor_psi >= psi_limiar:
+            motivos.append(f"PSI {valor_psi:.4f} >= limiar {psi_limiar}")
 
     if teste is not None:
         estatistica, pvalor = teste
@@ -63,8 +65,13 @@ def analisar_variavel(
                 f"estatistica {estatistica:.4f} >= {ks_limiar}"
             )
 
-    resultado["drift_detected"] = bool(motivos)
-    resultado["reasons"] = motivos or ["sem evidencia de mudanca pelos criterios declarados"]
+    elif tipo == TIPO_NUMERICO:
+        indisponiveis.append("K-S nao calculavel por falta de dados validos")
+
+    if valor_psi is not None or teste is not None:
+        resultado["drift_detected"] = bool(motivos)
+        motivos = motivos or ["sem evidencia de mudanca pelos criterios declarados"]
+    resultado["reasons"] = motivos + indisponiveis
     return resultado
 
 

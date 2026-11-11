@@ -185,7 +185,7 @@ def processar(
     )
     print(f"  cenario {scenario_id} / lote {batch_id}")
     for item in resultados:
-        marca = "MUDA" if item["drift_detected"] else "ok"
+        marca = {True: "MUDA", False: "ok", None: "nao avaliavel"}[item["drift_detected"]]
         estatistica = item["psi"]
         print(f"  [{marca}] {item['feature']} (PSI {estatistica}, faixa {item['psi_band']})")
     print(f"  documento -> {caminho_json.as_posix()}")

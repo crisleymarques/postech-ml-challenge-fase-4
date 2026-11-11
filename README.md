@@ -664,6 +664,11 @@ uv run analisar-drift ^
 | Resultado por variável e interpretação | `reports/runs/<run_id>/analise.json` |
 | Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
 
+PSI e K-S são avaliados independentemente. Quando os quantis da referência
+não permitem calcular PSI, o K-S continua válido para a decisão. Apenas a
+indisponibilidade de todos os testes deixa `drift_detected` nulo; nesse caso,
+a variável aparece como não avaliável, sem entrar no denominador do resumo.
+
 Cada variável registra `psi`, `psi_band` (insignificante, moderada ou
 significativa), `ks_statistic`, `ks_p_value`, `drift_detected` e `reasons`. A
 regra de decisão combina os dois testes: há mudança quando o PSI atinge
