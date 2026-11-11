@@ -94,7 +94,7 @@ flowchart TD
 | `drift/deteccao/` | Comparar referência e lote com Evidently; avaliar desempenho somente com rótulos compatíveis | Referência, lote aprovado, predições e configuração de detecção | Resultados estatísticos, alertas e HTML |
 | `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
 | `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
-| `logs.py` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
+| `observabilidade/logs/` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
 | `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -316,7 +316,7 @@ Cada etapa usa o mesmo contrato de evento: `timestamp`, `run_id`, `stage`,
 `drift_alert`; `level` admite `INFO`, `WARNING` e `ERROR`. A validação inclui
 eventos de falha mesmo quando nenhum artefato de dados for aprovado.
 
-O componente `logs.py` consolida os `events.jsonl` de todas as execuções em
+O componente `observabilidade/logs/` consolida os `events.jsonl` de todas as execuções em
 `reports/logs/operacional.jsonl` e publica `reports/logs/resumo.json` com a
 contagem por status de execução, por categoria operacional e por resultado, a
 lista de falhas (com `error_code`) e a lista de alertas. Cada evento recebe uma

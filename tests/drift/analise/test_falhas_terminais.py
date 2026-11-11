@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from monitoramento.drift.analise import servico
-from monitoramento.logs import gerar
+from monitoramento.observabilidade.logs import gerar
 
 from .apoio import montar_config, preparar_manifestos
 

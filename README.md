@@ -826,7 +826,7 @@ uv run pytest tests/simulacao/concept_drift tests/avaliacao/concept_drift -q
 
 ## Logs operacionais centralizados — F3-01
 
-O componente [src/monitoramento/logs.py](src/monitoramento/logs.py) consolida os
+O componente [src/monitoramento/observabilidade/logs/](src/monitoramento/observabilidade/logs/) consolida os
 `events.jsonl` que cada etapa publica em `reports/runs/<run_id>/`, seguindo o
 contrato comum de evento. Cada evento é classificado por categoria operacional
 (ingestão, transformação, validação, treinamento, simulação, predição, drift e
@@ -834,7 +834,7 @@ avaliação) e por resultado (início, sucesso, rejeição, falha, alerta e
 ignorado), sem alterar as etapas existentes — apenas agrega o que já é emitido.
 
 ```powershell
-uv run python src/monitoramento/logs.py --runs-dir reports/runs --output-dir reports/logs
+uv run python -m monitoramento.observabilidade.logs --runs-dir reports/runs --output-dir reports/logs
 ```
 
 | Artefato | Local |
@@ -861,7 +861,7 @@ Na execução real sobre as 11 execuções registradas, o log consolidou 25 even
 alertas de drift.
 
 ```powershell
-uv run pytest tests/test_logs.py -q
+uv run pytest tests/observabilidade/logs/ -q
 ```
 
 ## Convenção de commits
@@ -940,7 +940,7 @@ Concluídos:
 
 - Consolidação dos logs operacionais (F3-01), com classificação dos eventos por
   categoria e resultado, resumo de sucessos, falhas de contrato e alertas em
-  `reports/logs/` e testes em `tests/test_logs.py`.
+  `reports/logs/` e testes em `tests/observabilidade/logs/`.
 
 Pendentes:
 
