@@ -7,9 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from monitoramento import alertas, logs, metricas_saude
+from monitoramento.observabilidade import alertas, logs, metricas_saude
+from monitoramento.observabilidade.alertas.entradas import ler_json
+from monitoramento.observabilidade.metricas_saude.resultados import gravar_saude
 
-RAIZ = Path(__file__).resolve().parents[1]
+RAIZ = Path(__file__).resolve().parents[3]
 
 
 def gerar_fontes(tmp_path: Path, auc: float) -> dict:
@@ -65,13 +67,13 @@ def test_alertas_leem_ultima_saude_completa_durante_atualizacao(tmp_path, monkey
     def escrever_com_leitura(conteudo, arquivo, **kwargs):
         arquivo.write("{")
         arquivo.flush()
-        observados.append(alertas.ler_json(destino, "Saude operacional"))
+        observados.append(ler_json(destino, "Saude operacional"))
         arquivo.seek(0)
         arquivo.truncate()
         dump_original(conteudo, arquivo, **kwargs)
 
     monkeypatch.setattr(json, "dump", escrever_com_leitura)
-    metricas_saude.gravar_saude(destino, novo)
+    gravar_saude(destino, novo)
 
     assert observados == [anterior]
-    assert alertas.ler_json(destino, "Saude operacional") == novo
+    assert ler_json(destino, "Saude operacional") == novo

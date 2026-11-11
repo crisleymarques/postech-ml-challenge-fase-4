@@ -913,7 +913,7 @@ uv run pytest tests/observabilidade/metricas_saude/ -q
 
 ## Integração de drift, métricas e alertas — F3-03
 
-O componente [src/monitoramento/alertas.py](src/monitoramento/alertas.py) integra
+O componente [src/monitoramento/observabilidade/alertas/](src/monitoramento/observabilidade/alertas/) integra
 os artefatos já consolidados — as métricas de saúde (`reports/saude/saude.json`,
 F3-02) e os logs operacionais (`reports/logs/resumo.json`, F3-01) — e aplica os
 critérios declarados em [configs/alertas.json](configs/alertas.json):
@@ -924,7 +924,7 @@ critérios declarados em [configs/alertas.json](configs/alertas.json):
 - evento `drift_alert` registrado nos logs gera alerta `warning`.
 
 ```powershell
-uv run python src/monitoramento/alertas.py --saude reports/saude/saude.json --logs-resumo reports/logs/resumo.json --config configs/alertas.json --output-dir reports/alertas
+uv run python -m monitoramento.observabilidade.alertas --saude reports/saude/saude.json --logs-resumo reports/logs/resumo.json --config configs/alertas.json --output-dir reports/alertas
 ```
 
 | Artefato | Local |
@@ -959,7 +959,7 @@ Na execução real sobre os relatórios consolidados, foram integrados 14 alerta
 13 variáveis com drift, proporção 0,590909 e 3 alertas de drift.
 
 ```powershell
-uv run pytest tests/test_alertas.py tests/test_alertas_regressoes.py -q
+uv run pytest tests/observabilidade/alertas/ tests/observabilidade/integracao/test_saude_alertas_regressoes.py -q
 ```
 
 ## Convenção de commits
@@ -1047,7 +1047,7 @@ Concluídos:
 - Integração de drift, métricas e alertas (F3-03), com critérios de alerta em
   `configs/alertas.json`, sinalização de falhas e degradação com severidade,
   bloco consolidado de drift, alertas identificáveis e contabilizáveis em
-  `reports/alertas/alertas.json` e testes em `tests/test_alertas.py`.
+  `reports/alertas/alertas.json` e testes em `tests/observabilidade/alertas/`.
 
 Pendentes:
 

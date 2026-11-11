@@ -10,9 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from monitoramento import alertas, logs, metricas_saude
+from monitoramento.observabilidade import alertas, logs, metricas_saude
+from monitoramento.observabilidade.alertas import drift
+from monitoramento.observabilidade.alertas.config import carregar_config
 
-RAIZ = Path(__file__).resolve().parents[1]
+RAIZ = Path(__file__).resolve().parents[3]
 CONFIG = RAIZ / "configs/alertas.json"
 
 
@@ -67,9 +69,9 @@ def test_drift_independe_da_ordem_e_preserva_a_execucao(fontes) -> None:
     com_drift = execucao("a-drift", True, 13, 0.59)
     controle = execucao("z-controle", False, 0, 0.0)
     saude["execucoes"] = [com_drift, controle]
-    resultado = alertas.consolidar_drift(saude)
+    resultado = drift.consolidar_drift(saude)
     saude["execucoes"].reverse()
-    assert alertas.consolidar_drift(saude) == resultado
+    assert drift.consolidar_drift(saude) == resultado
     assert resultado["dataset_drift"] is True
     assert resultado["variaveis_com_drift"] == 13
     assert resultado["proporcao_drift"] == 0.59
@@ -86,7 +88,7 @@ def test_resumo_nao_combina_maximos_de_deteccao_e_analise(fontes) -> None:
     analise["stage"] = "analise"
     analise["metricas"] = analise["metricas"][1:]
     saude["execucoes"] = [execucao("deteccao", True, 13, 0.59), analise]
-    resultado = alertas.consolidar_drift(saude)
+    resultado = drift.consolidar_drift(saude)
     assert resultado["execucao_resumo"] == "analise"
     assert resultado["dataset_drift"] is None
     assert resultado["variaveis_com_drift"] == 2
@@ -97,7 +99,7 @@ def test_resumo_nao_combina_maximos_de_deteccao_e_analise(fontes) -> None:
 def test_drift_sem_resultados_permanece_indisponivel(fontes) -> None:
     saude, _ = fontes
     saude["execucoes"] = [execucao("incompleta", None, None, None)]
-    resultado = alertas.consolidar_drift(saude)
+    resultado = drift.consolidar_drift(saude)
     assert resultado["execucao_resumo"] is None
     assert resultado["dataset_drift"] is None
     assert resultado["variaveis_com_drift"] is None
@@ -121,7 +123,7 @@ def test_config_rejeita_mapeamento_que_perde_ou_inventa_alertas(tmp_path, mapa) 
     caminho = tmp_path / "config.json"
     caminho.write_text(json.dumps(config))
     with pytest.raises(ValueError, match="severidade_por_situacao"):
-        alertas.carregar_config(caminho)
+        carregar_config(caminho)
 
 
 @pytest.mark.parametrize("severidades", [["critical"], ["warning", "critical", "urgente"]])
@@ -131,7 +133,7 @@ def test_config_rejeita_severidades_nao_suportadas(tmp_path, severidades) -> Non
     caminho = tmp_path / "config.json"
     caminho.write_text(json.dumps(config))
     with pytest.raises(ValueError, match="severidades"):
-        alertas.carregar_config(caminho)
+        carregar_config(caminho)
 
 
 @pytest.mark.parametrize("indice", [0, 1], ids=["saude", "logs"])
@@ -199,7 +201,8 @@ def test_cli_rejeita_objeto_vazio_sem_sobrescrever_relatorio(tmp_path, fontes, i
     resultado = subprocess.run(
         [
             sys.executable,
-            str(RAIZ / "src/monitoramento/alertas.py"),
+            "-m",
+            "monitoramento.observabilidade.alertas",
             "--saude",
             str(caminhos[0]),
             "--logs-resumo",

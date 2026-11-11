@@ -96,7 +96,7 @@ flowchart TD
 | `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
 | `observabilidade/logs/` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
 | `observabilidade/metricas_saude/` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
-| `alertas.py` | Integrar logs, métricas de saúde e resultados de drift; sinalizar falhas e degradação | `reports/saude/saude.json`, `reports/logs/resumo.json` e catálogo de alertas | Alertas classificáveis e contáveis, bloco consolidado de drift e resumo (`alertas.json`) |
+| `observabilidade/alertas/` | Integrar logs, métricas de saúde e resultados de drift; sinalizar falhas e degradação | `reports/saude/saude.json`, `reports/logs/resumo.json` e catálogo de alertas | Alertas classificáveis e contáveis, bloco consolidado de drift e resumo (`alertas.json`) |
 | `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -369,7 +369,7 @@ Em métricas `menor_pior`, a situação muda apenas abaixo do limiar; em
 sem expor JSON parcial aos consumidores nem perder a versão anterior caso a
 atualização falhe.
 
-O componente `alertas.py` integra logs, métricas de saúde e resultados de drift
+O componente `observabilidade/alertas/` integra logs, métricas de saúde e resultados de drift
 em um único artefato. Ele lê os relatórios já consolidados
 (`reports/saude/saude.json` e `reports/logs/resumo.json`) e aplica os critérios
 declarados em `configs/alertas.json`: medida com situação `atencao` gera alerta
