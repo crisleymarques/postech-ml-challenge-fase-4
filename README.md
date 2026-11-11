@@ -573,13 +573,14 @@ uv run detectar-drift ^
 | Artefato | Local |
 |---|---|
 | Resultado por variável | `reports/runs/<run_id>/drift.json` |
-| Relatório HTML do Evidently | `reports/runs/<run_id>/drift.html` |
+| Relatório HTML customizado com estatísticas do Evidently | `reports/runs/<run_id>/drift.html` |
 | Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
 
 Cada variável registra `feature`, `method`, `statistic`, `threshold` e
-`drift_detected`. O Evidently escolhe o teste por tipo de coluna — distância de
-Wasserstein para numéricas e distância de Jensen-Shannon para categóricas — e a
-regra de decisão usa dois limiares declarados na configuração: `p_value_threshold`
+`drift_detected`. O Evidently escolhe o teste por tipo e tamanho da referência:
+em referências maiores, usa distância de Wasserstein para numéricas e
+Jensen-Shannon para categóricas; em amostras menores pode usar testes de
+p-valor. A regra de decisão usa dois limiares declarados na configuração: `p_value_threshold`
 para métodos de p-valor (drift quando a estatística fica abaixo) e
 `distance_threshold` para métodos de distância (drift quando a estatística fica
 acima), de modo que o limiar aplicado por variável fica explícito no resultado.
@@ -589,6 +590,48 @@ converter ausência de evidência em ausência de drift. Um alerta de drift **n�
 `WARNING`. A etapa aceita `--config`, `--input-manifest`, `--run-id` e
 `--output-dir` e encerra com código `0` (sucesso) ou `1` (erro técnico ou
 incompatibilidade de artefatos).
+
+JSON, HTML customizado, métricas e alertas usam um único resultado canônico;
+o HTML não reutiliza decisões nem limiares padrão do relatório nativo do
+Evidently. Valores iguais ao limiar não indicam drift; o alerta de conjunto
+exige proporção estritamente maior que 0,5, antes do arredondamento.
+
+A detecção exige SHA-256 válido e correspondente para referência, lote e
+metadados, e todas as features do modelo presentes nos dois CSVs. Colunas
+inteiramente nulas são registradas como não avaliáveis e excluídas do
+denominador; se nenhuma feature puder ser avaliada, a execução falha.
+`changed_variables.not_detected` contém apenas variáveis avaliadas sem drift;
+`not_evaluated` identifica as indisponíveis.
+
+O serviço reserva o diretório exclusivamente, inclusive para chamadas Python
+diretas e execuções concorrentes. O manifesto terminal é publicado por último,
+por substituição atômica, após os relatórios e os eventos finais. Falhas retornam
+1 e publicam diagnóstico `failed` quando a persistência está disponível; nunca
+aprovam artefatos parciais. Uma publicação de sucesso precisa de manifesto e
+eventos finais coerentes, incluindo `drift_alert` quando aplicável.
+
+Os testes da detecção incluem regressões de cobertura, hashes obrigatórios,
+concorrência, falhas de publicação e reprodução das decisões. O ambiente atual
+emite avisos de depreciação de NumPy/Litestar nas dependências do Evidently;
+são manutenção futura de compatibilidade, sem supressão global de avisos nem
+atualização de versões sem falha demonstrada.
+
+Na revalidação das correções, foi reutilizado o treinamento aprovado
+`fase1-treinamento`, com referência congelada de **59.997 linhas**, da execução
+sobre a base limpa. O baseline não foi retreinado nessa verificação. Um novo
+lote de **10.000 linhas** passou por simulação, contrato de produção e predição.
+Duas execuções independentes da detecção produziram os mesmos resultados:
+**14/22 features com drift** (proporção **0,636364**), incluindo as cinco
+alteradas intencionalmente, e evento `drift_alert`. Os hashes das partições
+originais, da referência e dos artefatos do modelo permaneceram iguais.
+Esses resultados usam a referência limpa e não substituem o registro histórico
+abaixo, produzido com outra referência.
+
+A suíte desta correção do F2-03 passou com **281 testes** (53 da detecção),
+incluindo 10 verificações da consistência entre manifesto e eventos. O HTML
+teve sua tabela e as decisões conferidas por parser nas regressões; a
+inspeção visual no navegador não foi concluída porque o ambiente bloqueou
+URLs de arquivos locais.
 
 Na execução real sobre o cenário `data-drift` / lote `batch-f201`, 13 de 22
 variáveis foram classificadas com drift (proporção de 0,5909, acima do critério

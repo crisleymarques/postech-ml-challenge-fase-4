@@ -5,6 +5,8 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
+import pandas as pd
+
 from monitoramento.infraestrutura import manifestos
 
 from .config import CONTRACT_VERSION, ErroDeteccao
@@ -13,7 +15,19 @@ carregar_manifesto = partial(
     manifestos.carregar_manifesto, erro=ErroDeteccao, contract_version=CONTRACT_VERSION
 )
 artefato = partial(manifestos.artefato, erro=ErroDeteccao)
-verificar_artefato = partial(manifestos.verificar_artefato, erro=ErroDeteccao)
+verificar_artefato = partial(
+    manifestos.verificar_artefato, erro=ErroDeteccao, hash_obrigatorio=True
+)
+
+
+def validar_features_esperadas(
+    referencia: pd.DataFrame, atual: pd.DataFrame, colunas: list[str]
+) -> None:
+    """Recusa cobertura parcial do schema declarado pelo modelo."""
+    for papel, base in (("referencia", referencia), ("producao", atual)):
+        ausentes = [coluna for coluna in colunas if coluna not in base.columns]
+        if ausentes:
+            raise ErroDeteccao(f"Features ausentes na {papel}: {ausentes}")
 
 
 def separar_manifestos(
