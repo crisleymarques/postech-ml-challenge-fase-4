@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -77,23 +78,26 @@ def versao_maior(versao: Any) -> str:
 
 
 def carregar_config(caminho: Path) -> dict[str, Any]:
-    """Le e valida minimamente os criterios de alerta."""
+    """Le e valida os criterios de alerta suportados pelos consumidores."""
     if not caminho.is_file():
         raise ValueError(f"Configuracao de alertas nao encontrada: {caminho}")
-    with caminho.open(encoding="utf-8") as arquivo:
-        config = json.load(arquivo)
-
-    if versao_maior(config.get("contract_version")) != versao_maior(CONTRACT_VERSION):
-        raise ValueError("Versao principal do contrato de alertas incompativel.")
+    config = ler_json(caminho, "Configuracao de alertas")
+    validar_versao(config, "Configuracao de alertas")
 
     severidades = config.get("severidades")
     if not isinstance(severidades, list) or not severidades:
         raise ValueError("A configuracao deve declarar as severidades.")
     if SEVERIDADE_CRITICAL not in severidades:
         raise ValueError(f"A severidade '{SEVERIDADE_CRITICAL}' deve constar na configuracao.")
+    if sorted(severidades, key=str) != sorted(ORDEM_SEVERIDADES):
+        raise ValueError("As severidades suportadas sao warning e critical, sem duplicatas.")
 
     mapa = config.get("severidade_por_situacao")
-    if not isinstance(mapa, dict) or SITUACAO_CRITICO not in mapa:
+    if (
+        not isinstance(mapa, dict)
+        or set(mapa) != {SITUACAO_ATENCAO, SITUACAO_CRITICO}
+        or any(valor not in severidades for valor in mapa.values())
+    ):
         raise ValueError("Mapeamento 'severidade_por_situacao' invalido ou incompleto.")
 
     for chave in ("severidade_falha", "severidade_alerta_drift"):
@@ -114,6 +118,100 @@ def ler_json(caminho: Path, rotulo: str) -> dict[str, Any]:
     if not isinstance(conteudo, dict):
         raise ValueError(f"{rotulo} invalido em {caminho}: esperado objeto JSON.")
     return conteudo
+
+
+def validar_versao(conteudo: dict[str, Any], rotulo: str) -> None:
+    """Exige uma versao textual valida da mesma versao principal."""
+    versao = conteudo.get("contract_version")
+    partes = versao.split(".") if isinstance(versao, str) else []
+    if (
+        len(partes) not in (2, 3)
+        or not all(parte.isascii() and parte.isdigit() for parte in partes)
+        or versao_maior(versao) != versao_maior(CONTRACT_VERSION)
+    ):
+        raise ValueError(f"{rotulo}: contract_version ausente, invalida ou incompativel.")
+
+
+def exigir_campo(objeto: dict[str, Any], chave: str, tipo: type, rotulo: str) -> Any:
+    """Valida um campo obrigatorio sem converter valores malformados."""
+    valor = objeto.get(chave)
+    if not isinstance(valor, tipo) or (tipo is str and not valor.strip()):
+        raise ValueError(f"{rotulo}: campo '{chave}' invalido ou ausente.")
+    return valor
+
+
+def objetos(objeto: dict[str, Any], chave: str, rotulo: str) -> list[dict[str, Any]]:
+    """Valida uma lista obrigatoria de objetos; lista vazia e permitida."""
+    itens = exigir_campo(objeto, chave, list, rotulo)
+    if any(not isinstance(item, dict) for item in itens):
+        raise ValueError(f"{rotulo}: '{chave}' deve conter somente objetos.")
+    return itens
+
+
+def validar_medida(medida: dict[str, Any], rotulo: str) -> None:
+    """Rejeita medidas que seriam ignoradas ou produziriam alertas sem identidade."""
+    for chave in ("id", "categoria", "nome", "unidade"):
+        exigir_campo(medida, chave, str, rotulo)
+    if medida.get("situacao") not in (
+        "ok",
+        SITUACAO_ATENCAO,
+        SITUACAO_CRITICO,
+        "indisponivel",
+        "nao_aplicavel",
+    ):
+        raise ValueError(f"{rotulo}: situacao invalida ou ausente.")
+    if medida.get("disponibilidade") not in ("available", "not_available"):
+        raise ValueError(f"{rotulo}: disponibilidade invalida ou ausente.")
+    if "valor" not in medida:
+        raise ValueError(f"{rotulo}: valor ausente.")
+    valor = medida["valor"]
+    if valor is None:
+        return
+    if not isinstance(valor, (str, bool, int, float)) or (
+        isinstance(valor, float) and not math.isfinite(valor)
+    ):
+        raise ValueError(f"{rotulo}: valor deve ser escalar e finito ou nulo.")
+    identificador = medida["id"]
+    if identificador == ID_DATASET_DRIFT and not isinstance(valor, bool):
+        raise ValueError(f"{rotulo}: valor de dataset_drift deve ser booleano ou nulo.")
+    if identificador in (ID_VARIAVEIS_DRIFT, ID_ALERTAS_TOTAL) and (
+        type(valor) is not int or valor < 0
+    ):
+        raise ValueError(f"{rotulo}: valor deve ser contagem inteira nao negativa ou nulo.")
+    if identificador == ID_PROPORCAO_DRIFT and (
+        type(valor) not in (int, float) or not 0 <= valor <= 1
+    ):
+        raise ValueError(f"{rotulo}: valor de proporcao deve estar entre 0 e 1 ou ser nulo.")
+
+
+def validar_saude(saude: dict[str, Any]) -> None:
+    """Valida o contrato consumido da F3-02 antes de gerar qualquer saida."""
+    rotulo = "Relatorio de saude"
+    validar_versao(saude, rotulo)
+    for execucao in objetos(saude, "execucoes", rotulo):
+        for chave in ("run_id", "stage", "status"):
+            exigir_campo(execucao, chave, str, f"{rotulo}.execucoes")
+        for medida in objetos(execucao, "metricas", f"{rotulo}.execucoes"):
+            validar_medida(medida, f"{rotulo}.execucoes.metricas")
+    for medida in objetos(saude, "agregados", rotulo):
+        validar_medida(medida, f"{rotulo}.agregados")
+
+
+def validar_logs(resumo: dict[str, Any]) -> None:
+    """Valida o contrato consumido da F3-01, incluindo falhas e alertas."""
+    rotulo = "Resumo dos logs"
+    validar_versao(resumo, rotulo)
+    for chave in ("execucoes", "eventos"):
+        bloco = exigir_campo(resumo, chave, dict, rotulo)
+        total = bloco.get("total")
+        if type(total) is not int or total < 0:
+            raise ValueError(f"{rotulo}.{chave}: total deve ser inteiro nao negativo.")
+    for chave in ("falhas", "alertas"):
+        for evento in objetos(resumo, chave, rotulo):
+            for campo in ("run_id", "stage"):
+                exigir_campo(evento, campo, str, f"{rotulo}.{chave}")
+            if chave == "falhas":
+                exigir_campo(evento, "event", str, f"{rotulo}.{chave}")
 
 
 def medidas_com_situacao(
@@ -254,37 +352,62 @@ def _ultimo_valor(medidas: list[dict[str, Any]], id_metrica: str, chave: str) ->
     return valor
 
 
-def _maior_valor(medidas: list[dict[str, Any]], id_metrica: str) -> float | None:
-    """Maior valor numerico de uma metrica entre as execucoes."""
-    valores = [
-        medida.get("valor")
-        for medida in medidas
-        if medida.get("id") == id_metrica
-        and isinstance(medida.get("valor"), (int, float))
-        and not isinstance(medida.get("valor"), bool)
-    ]
-    return max(valores) if valores else None
-
-
 def consolidar_drift(saude: dict[str, Any]) -> dict[str, Any]:
-    """Reune as evidencias de drift das medidas de saude e dos alertas dos logs."""
-    execucoes: list[str] = []
-    medidas: list[dict[str, Any]] = []
+    """Resume uma unica execucao e preserva os resultados individuais de drift.
+
+    Seleciona a maior proporcao, depois quantidade e run_id como desempates.
+    Trata-se de destaque historico, nao de resultado mais recente. Nao infere
+    dataset_drift quando a etapa (como a analise estatistica) nao o publicou.
+    """
+    por_execucao: list[dict[str, Any]] = []
     for execucao in saude.get("execucoes", []) or []:
         if not isinstance(execucao, dict):
             continue
         metricas = [item for item in execucao.get("metricas", []) or [] if isinstance(item, dict)]
-        medidas.extend(metricas)
         if any(item.get("id") in IDS_DRIFT_EXECUCAO for item in metricas):
-            execucoes.append(execucao.get("run_id") or execucao.get("stage") or ORIGEM_AGREGADO)
+            por_execucao.append(
+                {
+                    "run_id": execucao.get("run_id") or execucao.get("stage") or ORIGEM_AGREGADO,
+                    "stage": execucao.get("stage"),
+                    "dataset_drift": _ultimo_valor(metricas, ID_DATASET_DRIFT, "valor"),
+                    "variaveis_com_drift": _ultimo_valor(metricas, ID_VARIAVEIS_DRIFT, "valor"),
+                    "proporcao_drift": _ultimo_valor(metricas, ID_PROPORCAO_DRIFT, "valor"),
+                }
+            )
+
+    por_execucao.sort(key=lambda item: item["run_id"])
+    avaliadas = [
+        item
+        for item in por_execucao
+        if any(
+            item[chave] is not None
+            for chave in (
+                "dataset_drift",
+                "variaveis_com_drift",
+                "proporcao_drift",
+            )
+        )
+    ]
+    destaque = max(
+        avaliadas,
+        key=lambda item: (
+            item["proporcao_drift"] if item["proporcao_drift"] is not None else -1,
+            item["variaveis_com_drift"] if item["variaveis_com_drift"] is not None else -1,
+            item["run_id"],
+        ),
+        default={},
+    )
 
     agregados = [item for item in saude.get("agregados", []) or [] if isinstance(item, dict)]
     return {
-        "dataset_drift": _ultimo_valor(medidas, ID_DATASET_DRIFT, "valor"),
-        "variaveis_com_drift": _maior_valor(medidas, ID_VARIAVEIS_DRIFT),
-        "proporcao_drift": _maior_valor(medidas, ID_PROPORCAO_DRIFT),
+        "dataset_drift": destaque.get("dataset_drift"),
+        "variaveis_com_drift": destaque.get("variaveis_com_drift"),
+        "proporcao_drift": destaque.get("proporcao_drift"),
         "alertas_total": _ultimo_valor(agregados, ID_ALERTAS_TOTAL, "valor"),
-        "execucoes": execucoes,
+        "execucoes": [item["run_id"] for item in por_execucao],
+        "execucao_resumo": destaque.get("run_id"),
+        "criterio_resumo": "maior_proporcao_depois_quantidade_e_run_id",
+        "por_execucao": por_execucao,
     }
 
 
@@ -321,6 +444,8 @@ def gerar(
     config = carregar_config(config_path)
     saude = ler_json(saude_path, "Relatorio de saude")
     resumo_logs = ler_json(logs_resumo_path, "Resumo dos logs")
+    validar_saude(saude)
+    validar_logs(resumo_logs)
 
     alertas = (
         alertas_de_medidas(saude, config.get("severidade_por_situacao") or {})
