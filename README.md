@@ -864,6 +864,48 @@ alertas de drift.
 uv run pytest tests/test_logs.py -q
 ```
 
+## Métricas de saúde operacional — F3-02
+
+O catálogo de métricas está definido em
+[configs/metricas_saude.json](configs/metricas_saude.json) e rege a coleta. Cada
+métrica declara `id`, `categoria`, `nome`, `semantica`, `unidade`, `escopo`
+(`execucao` ou `agregado`), `etapas` (nulo quando aplicável a todas), `coleta`,
+`criterio`, `direcao` (`maior_pior`/`menor_pior`) e os limiares
+`limiar_degracao` e `limiar_falha`. São 15 métricas em 5 categorias: pipeline,
+qualidade, drift, modelo e infraestrutura local.
+
+O componente [src/monitoramento/metricas_saude.py](src/monitoramento/metricas_saude.py)
+lê os artefatos persistidos de cada execução — manifesto, `metrics.json`,
+`quality.json`, `drift.json`, `analise.json` e `performance.json` —, coleta os
+valores, marca a disponibilidade e classifica cada medida em `ok`, `atencao`,
+`critico`, `indisponivel` ou `nao_aplicavel`. A sinalização e o alerta efetivos
+ficam na integração do F3-03; esta etapa apenas coleta e classifica.
+
+```powershell
+uv run python src/monitoramento/metricas_saude.py --runs-dir reports/runs --output-dir reports/saude
+```
+
+| Artefato | Local |
+|---|---|
+| Medidas por execução, agregados e resumo | `reports/saude/saude.json` |
+
+Os limiares operacionais definidos são: duração 60 s (atenção) e 300 s
+(crítico); taxa de sucesso 0,9 (atenção) e 0,5 (crítico); proporção de variáveis
+com drift 0,1 (atenção) e 0,5 (crítico); `roc_auc` 0,6 (atenção) e 0,5
+(crítico); espaço livre 1 GiB (atenção) e 256 MiB (crítico). Alerta de drift e
+mudança de distribuição não são erro de execução. Os artefatos ficam em
+`reports/saude/`, ignorado pelo Git, e a etapa encerra com código `0` (sucesso)
+ou `1` (erro técnico).
+
+Na execução real sobre as 11 execuções registradas, foram coletadas 48 medidas
+(situações `ok=38`, `atencao=8`, `critico=2`), com destaque para
+`drift.proporcao_drift = 0,590909` (`run-f203-deteccao`) e
+`modelo.roc_auc = 0,461174` (`run-f205-avaliacao`) em estado crítico.
+
+```powershell
+uv run pytest tests/test_metricas_saude.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -941,6 +983,11 @@ Concluídos:
 - Consolidação dos logs operacionais (F3-01), com classificação dos eventos por
   categoria e resultado, resumo de sucessos, falhas de contrato e alertas em
   `reports/logs/` e testes em `tests/test_logs.py`.
+- Definição e coleta das métricas de saúde operacional (F3-02), com catálogo de
+  15 métricas em 5 categorias, coleta a partir dos artefatos persistidos,
+  classificação por situação com dois níveis de limiar (`atencao`/`critico`),
+  medidas em `reports/saude/saude.json` e testes em
+  `tests/test_metricas_saude.py`.
 
 Pendentes:
 
