@@ -23,7 +23,11 @@ def executar_cli(*argumentos: str) -> subprocess.CompletedProcess:
     ambiente["PYTHONPATH"] = str(RAIZ / "src")
     return subprocess.run(
         [sys.executable, "-m", "monitoramento.predicao.cli", *argumentos],
-        cwd=RAIZ, env=ambiente, capture_output=True, text=True, check=False,
+        cwd=RAIZ,
+        env=ambiente,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
@@ -51,9 +55,20 @@ def test_cli_carrega_modelo_e_publica_predicoes(tmp_path: Path) -> None:
     output = tmp_path / "run"
 
     resultado = executar_cli(
-        "--config", str(config), "--input-manifest", str(tmp_path / "man-treino.json"),
-        "--input-manifest", str(tmp_path / "man-simulacao.json"), "--run-id", "cli-predicao",
-        "--output-dir", str(output), "--analysis-dir", str(tmp_path / "analysis"),
+        "--config",
+        str(config),
+        "--input-manifest",
+        str(tmp_path / "man-treino.json"),
+        "--input-manifest",
+        str(tmp_path / "man-simulacao.json"),
+        "--input-manifest",
+        str(tmp_path / "man-validacao.json"),
+        "--run-id",
+        "cli-predicao",
+        "--output-dir",
+        str(output),
+        "--analysis-dir",
+        str(tmp_path / "analysis"),
     )
 
     assert resultado.returncode == 0, resultado.stdout + resultado.stderr

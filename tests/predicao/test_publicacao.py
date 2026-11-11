@@ -1,10 +1,12 @@
 """Testes migrados da etapa de predicao."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from monitoramento.infraestrutura import arquivos
 from monitoramento.predicao import config as cfg
@@ -93,3 +95,285 @@ def test_processar_rejeita_dataset_divergente(tmp_path: Path) -> None:
     ]
     assert eventos[-1]["event"] == "failed"
     assert eventos[-1]["error_code"] == "PREDICAO_INVALIDA"
+
+
+def test_falha_de_escrita_publica_manifesto_terminal(tmp_path: Path) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+    analysis = tmp_path / "analysis"
+    analysis.write_text("arquivo no lugar do diretorio")
+    output = tmp_path / "run"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "io",
+            output,
+            analysis_dir=analysis,
+        )
+        == cfg.CODIGO_ERRO
+    )
+    manifesto = json.loads((output / "manifest.json").read_text())
+    eventos = [json.loads(linha) for linha in (output / "events.jsonl").read_text().splitlines()]
+    assert manifesto["status"] == "failed"
+    assert manifesto["error_code"] == "PREDICAO_INVALIDA"
+    assert manifesto["outputs"] == []
+    assert manifesto["started_at"] <= manifesto["finished_at"]
+    assert manifesto["model_id"] == "modelo-teste"
+    assert [evento["event"] for evento in eventos] == ["started", "failed"]
+
+
+def test_diretorio_existente_permanece_intacto(tmp_path: Path) -> None:
+    output = tmp_path / "run"
+    output.mkdir()
+    marcador = output / "manifest.json"
+    marcador.write_text("anterior")
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            [],
+            "colisao",
+            output,
+        )
+        == cfg.CODIGO_ERRO
+    )
+    assert marcador.read_text() == "anterior"
+    assert list(output.iterdir()) == [marcador]
+
+
+def test_config_invalida_nao_inicia_execucao(tmp_path: Path) -> None:
+    output = tmp_path / "run"
+    config = montar_config()
+    config["outputs"] = {}
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            config,
+            [],
+            "invalida",
+            output,
+        )
+        == cfg.CODIGO_ERRO
+    )
+    assert not output.exists()
+
+
+def test_inicio_persistido_antes_de_carregar_modelo(tmp_path: Path, monkeypatch) -> None:
+    output = tmp_path / "run"
+    manifestos = preparar_manifestos(tmp_path)
+
+    def falhar(_):
+        eventos = (output / "events.jsonl").read_text().splitlines()
+        assert json.loads(eventos[0])["event"] == "started"
+        raise RuntimeError("modelo indisponivel")
+
+    monkeypatch.setattr(servico, "carregar_pipeline", falhar)
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "modelo",
+            output,
+        )
+        == cfg.CODIGO_ERRO
+    )
+    assert json.loads((output / "manifest.json").read_text())["status"] == "failed"
+
+
+@pytest.mark.parametrize("tipo", ["model_pipeline", "model_metadata", "features"])
+@pytest.mark.parametrize("hash_invalido", [None, "", "xyz", "g" * 64, "0" * 64])
+def test_hash_invalido_bloqueia_modelo(tmp_path: Path, monkeypatch, tipo, hash_invalido) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+    for manifesto in manifestos:
+        for item in manifesto["outputs"]:
+            if item["artifact_type"] == tipo:
+                item["sha256"] = hash_invalido
+
+    def nao_carregar(_):
+        pytest.fail("O modelo nao pode ser carregado com artefatos sem integridade.")
+
+    monkeypatch.setattr(servico, "carregar_pipeline", nao_carregar)
+    output = tmp_path / "run"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "hash",
+            output,
+            analysis_dir=tmp_path / "analysis",
+        )
+        == cfg.CODIGO_ERRO
+    )
+    assert json.loads((output / "manifest.json").read_text())["status"] == "failed"
+    assert not (tmp_path / "analysis").exists()
+
+
+@pytest.mark.parametrize("origem", ["modelo", "metadata", "lote"])
+@pytest.mark.parametrize("schema", [None, "", "99.0"])
+def test_schema_incompativel_bloqueia_inferencia(tmp_path: Path, monkeypatch, origem, schema):
+    manifestos = preparar_manifestos(tmp_path)
+    if origem == "metadata":
+        caminho = tmp_path / "metadata.json"
+        metadata = json.loads(caminho.read_text())
+        metadata["schema_version"] = schema
+        arquivos.escrever_json(caminho, metadata)
+        manifestos[0]["outputs"][1]["sha256"] = arquivos.sha256_arquivo(caminho)
+    else:
+        manifestos[0 if origem == "modelo" else 1]["schema_version"] = schema
+    monkeypatch.setattr(servico, "carregar_pipeline", lambda _: pytest.fail("schema invalido"))
+    output = tmp_path / "run"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "schema",
+            output,
+        )
+        == cfg.CODIGO_ERRO
+    )
+    assert json.loads((output / "manifest.json").read_text())["outputs"] == []
+
+
+@pytest.mark.parametrize("campo", ["dataset_id", "model_id", "reference_id"])
+def test_metadata_divergente_bloqueia_inferencia(tmp_path: Path, monkeypatch, campo):
+    manifestos = preparar_manifestos(tmp_path)
+    caminho = tmp_path / "metadata.json"
+    metadata = json.loads(caminho.read_text())
+    metadata[campo] = "outro"
+    arquivos.escrever_json(caminho, metadata)
+    manifestos[0]["outputs"][1]["sha256"] = arquivos.sha256_arquivo(caminho)
+    monkeypatch.setattr(servico, "carregar_pipeline", lambda _: pytest.fail("identidade invalida"))
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "metadata",
+            tmp_path / "run",
+        )
+        == cfg.CODIGO_ERRO
+    )
+
+
+def test_reexecucao_preserva_bytes_e_manifesto_anterior(tmp_path: Path) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+    config = montar_config()
+    analysis = tmp_path / "analysis"
+    primeira = tmp_path / "run1"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            config,
+            manifestos,
+            "primeira",
+            primeira,
+            analysis_dir=analysis,
+        )
+        == 0
+    )
+    manifesto_bytes = (primeira / "manifest.json").read_bytes()
+    saida = json.loads(manifesto_bytes)["outputs"][0]
+    caminho = Path(saida["path"])
+    predicoes_bytes = caminho.read_bytes()
+    segunda = tmp_path / "run2"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            config,
+            manifestos,
+            "segunda",
+            segunda,
+            analysis_dir=analysis,
+        )
+        == 1
+    )
+    assert caminho.read_bytes() == predicoes_bytes
+    assert arquivos.sha256_arquivo(caminho) == saida["sha256"]
+    assert (primeira / "manifest.json").read_bytes() == manifesto_bytes
+    assert json.loads((segunda / "manifest.json").read_text())["outputs"] == []
+
+
+def test_reserva_concorrente_permite_uma_publicacao(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from monitoramento.predicao.resultados import escrever_predicoes
+
+    barreira = Barrier(2)
+    caminho = tmp_path / "modelo" / "predictions.csv"
+
+    def publicar(valor):
+        barreira.wait()
+        try:
+            escrever_predicoes(caminho, pd.DataFrame({"prediction": [valor]}))
+            return True
+        except FileExistsError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        resultados = list(executor.map(publicar, [0, 1]))
+    assert sorted(resultados) == [False, True]
+    assert pd.read_csv(caminho)["prediction"].tolist() in ([0], [1])
+    assert list(caminho.parent.iterdir()) == [caminho]
+
+
+def test_escrita_interrompida_nao_publica_csv_ou_sucesso(tmp_path: Path, monkeypatch) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+
+    def falhar(self, caminho, **kwargs):
+        Path(caminho).write_text("parcial")
+        raise OSError("falha simulada na escrita")
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", falhar)
+    output = tmp_path / "run"
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "interrompida",
+            output,
+            analysis_dir=tmp_path / "analysis",
+        )
+        == 1
+    )
+    assert not list((tmp_path / "analysis").rglob("predictions.csv"))
+    assert not list((tmp_path / "analysis").rglob("*.tmp"))
+    manifesto = json.loads((output / "manifest.json").read_text())
+    assert manifesto["status"] == "failed"
+    assert manifesto["outputs"] == []
+
+
+def test_manifesto_fecha_publicacao(tmp_path: Path, monkeypatch) -> None:
+    manifestos = preparar_manifestos(tmp_path)
+    output = tmp_path / "run"
+    publicar = servico.publicar_manifesto
+    chamadas = []
+
+    def verificar(caminho, manifesto):
+        eventos = [
+            json.loads(linha) for linha in (output / "events.jsonl").read_text().splitlines()
+        ]
+        assert eventos[-1]["event"] == "completed"
+        assert (output / "metrics.json").is_file()
+        assert Path(manifesto["outputs"][0]["path"]).is_file()
+        chamadas.append(manifesto["status"])
+        publicar(caminho, manifesto)
+
+    monkeypatch.setattr(servico, "publicar_manifesto", verificar)
+    assert (
+        servico.processar(
+            tmp_path / "config.json",
+            montar_config(),
+            manifestos,
+            "ultimo",
+            output,
+            analysis_dir=tmp_path / "analysis",
+        )
+        == 0
+    )
+    assert chamadas == ["success"]
