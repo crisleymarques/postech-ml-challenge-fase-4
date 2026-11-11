@@ -1,4 +1,5 @@
 """Testes de transformacoes de Concept Drift."""
+
 from __future__ import annotations
 
 import numpy as np

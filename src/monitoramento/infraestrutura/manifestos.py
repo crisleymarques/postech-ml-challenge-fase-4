@@ -1,4 +1,5 @@
 """Leitura e integridade de manifestos, sem regras especificas das etapas."""
+
 from __future__ import annotations
 
 import json
@@ -30,9 +31,7 @@ def carregar_manifesto(
     return manifesto
 
 
-def artefato(
-    manifesto: dict[str, Any], tipo: str, *, erro: type[Exception]
-) -> dict[str, Any]:
+def artefato(manifesto: dict[str, Any], tipo: str, *, erro: type[Exception]) -> dict[str, Any]:
     """Devolve o descritor de um artefato de saida pelo tipo."""
     for item in manifesto.get("outputs", []):
         if item.get("artifact_type") == tipo:

@@ -92,8 +92,10 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
     if perfil not in ("reference", "production"):
         raise ValueError("profile deve ser 'reference' ou 'production'.")
     config["profile"] = perfil
-    config["artifacts"] = ["features"] if perfil == "production" else config.get(
-        "artifacts", ["train", "validation", "test"]
+    config["artifacts"] = (
+        ["features"]
+        if perfil == "production"
+        else config.get("artifacts", ["train", "validation", "test"])
     )
 
     regras = config["rules"]
@@ -469,8 +471,10 @@ def processar(
     if perfil not in ("reference", "production"):
         raise ValueError("profile deve ser 'reference' ou 'production'.")
     config["profile"] = perfil
-    config["artifacts"] = ["features"] if perfil == "production" else config.get(
-        "artifacts", ["train", "validation", "test"]
+    config["artifacts"] = (
+        ["features"]
+        if perfil == "production"
+        else config.get("artifacts", ["train", "validation", "test"])
     )
     iniciado = agora_iso()
     dataset_id = config.get("dataset_id", "desconhecido")
@@ -557,9 +561,7 @@ def processar(
             "dataset_id": config["dataset_id"],
             "schema_version": config["schema_version"],
             "target_contract": (
-                target_contract
-                if config.get("profile", "reference") == "reference"
-                else None
+                target_contract if config.get("profile", "reference") == "reference" else None
             ),
             "approved": aprovado,
             "checked_rows": linhas_verificadas,
@@ -694,8 +696,10 @@ def main() -> None:
         config = carregar_config(args.config)
         if args.profile:
             config["profile"] = args.profile
-        config["artifacts"] = ["features"] if config["profile"] == "production" else config.get(
-            "artifacts", ["train", "validation", "test"]
+        config["artifacts"] = (
+            ["features"]
+            if config["profile"] == "production"
+            else config.get("artifacts", ["train", "validation", "test"])
         )
         manifesto = carregar_manifesto(args.input_manifest[0])
     except Exception as erro:  # noqa: BLE001 - entrada invalida e erro tecnico

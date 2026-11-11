@@ -1,4 +1,5 @@
 """Contrato de inferencia preservado ao separar a avaliacao da predicao."""
+
 from __future__ import annotations
 
 import numpy as np

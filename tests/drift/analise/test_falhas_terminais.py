@@ -1,10 +1,12 @@
 """Publicacao terminal e preservacao dos artefatos da analise."""
+
 import json
 from pathlib import Path
 
 import pytest
 
 from monitoramento.drift.analise import servico
+from monitoramento.observabilidade.logs import gerar
 
 from .apoio import montar_config, preparar_manifestos
 
@@ -129,9 +131,10 @@ def test_manifesto_de_sucesso_publicado_apos_eventos(tmp_path: Path, monkeypatch
         nonlocal observado
         assert manifesto["status"] == "success"
         assert not caminho.exists()
-        assert all((output / nome).is_file() for nome in (
-            "config.json", "analise.json", "metrics.json", "events.jsonl"
-        ))
+        assert all(
+            (output / nome).is_file()
+            for nome in ("config.json", "analise.json", "metrics.json", "events.jsonl")
+        )
         eventos = [
             json.loads(linha) for linha in (output / "events.jsonl").read_text().splitlines()
         ]
@@ -150,6 +153,26 @@ def test_config_invalida_nao_reserva_diretorio(tmp_path: Path) -> None:
     output = tmp_path / "run"
     assert servico.processar(tmp_path / "config.json", config, [], "run", output) == 1
     assert not output.exists()
+
+
+def test_falha_persistente_nos_eventos_permanece_nos_logs(tmp_path: Path, monkeypatch) -> None:
+    def falhar(*args):
+        raise OSError("events.jsonl indisponivel")
+
+    monkeypatch.setattr(servico, "escrever_eventos", falhar)
+    runs = tmp_path / "runs"
+    output = runs / "run"
+    assert servico.processar(tmp_path / "config.json", montar_config(), [], "run", output) == 1
+    assert not (output / "events.jsonl").exists()
+    manifesto = json.loads((output / "manifest.json").read_text())
+
+    resumo = gerar(runs, tmp_path / "logs")
+
+    assert resumo["execucoes"]["por_status"] == {"failed": 1}
+    assert len(resumo["falhas"]) == 1
+    assert resumo["falhas"][0]["run_id"] == manifesto["run_id"]
+    assert resumo["falhas"][0]["stage"] == manifesto["stage"]
+    assert resumo["falhas"][0]["error_code"] == "ANALISE_INVALIDA"
 
 
 @pytest.mark.parametrize("defeito", ["rejeitado", "versao"])

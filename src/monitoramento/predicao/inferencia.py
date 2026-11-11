@@ -1,4 +1,5 @@
 """Aplicacao do pipeline e construcao das predicoes alinhadas ao lote."""
+
 from __future__ import annotations
 
 from typing import Any

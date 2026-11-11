@@ -41,11 +41,16 @@ def test_cli_publica_analise_estatistica(tmp_path: Path) -> None:
     output = tmp_path / "run"
 
     resultado = executar_cli(
-        "--config", str(config),
-        "--input-manifest", str(tmp_path / "man-treino.json"),
-        "--input-manifest", str(tmp_path / "man-simulacao.json"),
-        "--run-id", "cli-analise",
-        "--output-dir", str(output),
+        "--config",
+        str(config),
+        "--input-manifest",
+        str(tmp_path / "man-treino.json"),
+        "--input-manifest",
+        str(tmp_path / "man-simulacao.json"),
+        "--run-id",
+        "cli-analise",
+        "--output-dir",
+        str(output),
     )
 
     assert resultado.returncode == 0, resultado.stdout + resultado.stderr
@@ -62,10 +67,14 @@ def test_cli_manifesto_ausente_registra_falha(tmp_path: Path) -> None:
     config.write_text(json.dumps(montar_config()))
     output = tmp_path / "run"
     resultado = executar_cli(
-        "--config", str(config),
-        "--input-manifest", str(tmp_path / "ausente-a.json"),
-        "--input-manifest", str(tmp_path / "ausente-b.json"),
-        "--output-dir", str(output),
+        "--config",
+        str(config),
+        "--input-manifest",
+        str(tmp_path / "ausente-a.json"),
+        "--input-manifest",
+        str(tmp_path / "ausente-b.json"),
+        "--output-dir",
+        str(output),
     )
     assert resultado.returncode == 1
     manifesto = json.loads((output / "manifest.json").read_text())

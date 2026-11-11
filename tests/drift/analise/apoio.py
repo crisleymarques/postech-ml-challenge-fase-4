@@ -1,4 +1,5 @@
 """Dados e manifestos sinteticos compartilhados pelos testes de analise."""
+
 from __future__ import annotations
 
 import json

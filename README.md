@@ -99,8 +99,8 @@ A análise estática também passou.
 
 Essas verificações não validam o pipeline completo. As etapas de obtenção,
 preparação, treinamento, validação, simulação (Data e Concept Drift), predição,
-detecção e análise de drift possuem testes isolados descritos abaixo; o dashboard
-permanece pendente.
+detecção e análise de drift, além dos logs, métricas e alertas e do dashboard,
+possuem testes isolados descritos abaixo.
 
 ## Arquitetura e contratos
 
@@ -124,8 +124,8 @@ a referência de drift é congelada a partir das features de treino.
 Os scripts de obtenção/amostragem do dataset e de preparação e separação das
 partições estão implementados, assim como o contrato Pandera, o treinamento, a
 simulação (Data e Concept Drift), a predição, a detecção e a análise estatística
-do drift. O dashboard ainda não está
-implementado. A documentação de arquitetura
+do drift, a consolidação dos logs operacionais, as métricas de saúde, os alertas
+e o dashboard Streamlit. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
 
 ## Dataset — PREP-02
@@ -824,6 +824,183 @@ evento `drift_alert` registrado.
 uv run pytest tests/simulacao/concept_drift tests/avaliacao/concept_drift -q
 ```
 
+## Logs operacionais centralizados — F3-01
+
+O componente [src/monitoramento/observabilidade/logs/](src/monitoramento/observabilidade/logs/) consolida os
+`events.jsonl` que cada etapa publica em `reports/runs/<run_id>/`, seguindo o
+contrato comum de evento. Cada evento é classificado por categoria operacional
+(ingestão, transformação, validação, treinamento, simulação, predição, drift e
+avaliação) e por resultado (início, sucesso, rejeição, falha, alerta e
+ignorado), sem alterar as etapas existentes — apenas agrega o que já é emitido.
+
+```powershell
+uv run python -m monitoramento.observabilidade.logs --runs-dir reports/runs --output-dir reports/logs
+```
+
+| Artefato | Local |
+|---|---|
+| Log operacional consolidado (todos os eventos) | `reports/logs/operacional.jsonl` |
+| Resumo com contagens, falhas e alertas | `reports/logs/resumo.json` |
+
+O resumo reúne o total de execuções e a contagem por status
+(`success`/`rejected`/`failed`/`incomplete`), a contagem por categoria e
+resultado, a lista de **falhas** com `run_id`, `stage` e `error_code` — o que
+torna as violações de contrato identificáveis — e a lista de **alertas** de
+drift com `scenario_id` e `batch_id`. A etapa `preparacao` realiza ingestão e
+transformação de forma acoplada; por isso seu desfecho alimenta as duas
+categorias e as transformações aplicadas são detalhadas a partir do manifesto.
+Manifestos com status `failed` ou `rejected` também alimentam a lista de falhas
+quando não há evento terminal equivalente, preservando o código e o horário do
+erro sem duplicar registros ou criar eventos no log original. As demais execuções
+sem publicação terminal confirmada aparecem como `incomplete`, sem inferir sucesso.
+Os artefatos ficam em `reports/logs/`, ignorado pelo Git, e a etapa encerra com
+código `0` (sucesso) ou `1` (erro técnico).
+
+Na execução real sobre as 11 execuções registradas, o log consolidou 25 eventos
+(10 sucessos e 1 rejeição), 1 falha de contrato (`QUALIDADE_REPROVADA`) e 3
+alertas de drift.
+
+```powershell
+uv run pytest tests/observabilidade/logs/ -q
+```
+
+## Métricas de saúde operacional — F3-02
+
+O catálogo de métricas está definido em
+[configs/metricas_saude.json](configs/metricas_saude.json) e rege a coleta. Cada
+métrica declara `id`, `categoria`, `nome`, `semantica`, `unidade`, `escopo`
+(`execucao` ou `agregado`), `etapas` (nulo quando aplicável a todas), `coleta`,
+`criterio`, `direcao` (`maior_pior`/`menor_pior`) e os limiares
+`limiar_degracao` e `limiar_falha`. São 15 métricas em 5 categorias: pipeline,
+qualidade, drift, modelo e infraestrutura local.
+
+O componente [src/monitoramento/observabilidade/metricas_saude/](src/monitoramento/observabilidade/metricas_saude/)
+lê os artefatos persistidos de cada execução — manifesto, `metrics.json`,
+`quality.json`, `drift.json`, `analise.json` e `performance.json` —, coleta os
+valores, marca a disponibilidade e classifica cada medida em `ok`, `atencao`,
+`critico`, `indisponivel` ou `nao_aplicavel`. A sinalização e o alerta efetivos
+ficam na integração do F3-03; esta etapa apenas coleta e classifica.
+
+```powershell
+uv run python -m monitoramento.observabilidade.metricas_saude --runs-dir reports/runs --output-dir reports/saude
+```
+
+| Artefato | Local |
+|---|---|
+| Medidas por execução, agregados e resumo | `reports/saude/saude.json` |
+
+Os limiares operacionais definidos são: duração 60 s (atenção) e 300 s
+(crítico); taxa de sucesso 0,9 (atenção) e 0,5 (crítico); proporção de variáveis
+com drift 0,1 (atenção) e 0,5 (crítico); `roc_auc` 0,6 (atenção) e 0,5
+(crítico); espaço livre 1 GiB (atenção) e 256 MiB (crítico). Para métricas
+`menor_pior`, os limites são exclusivos: taxa de sucesso 0,9 e ROC AUC 0,6
+ainda são `ok`; ROC AUC 0,5 é `atencao`. Volume de ao menos 1 linha é `ok`.
+Para `maior_pior`, o próprio limiar já aciona a situação correspondente.
+O relatório é publicado atomicamente: leitores recebem um JSON completo e
+uma falha na atualização preserva a última versão publicada. Alerta de drift e
+mudança de distribuição não são erro de execução. Os artefatos ficam em
+`reports/saude/`, ignorado pelo Git, e a etapa encerra com código `0` (sucesso)
+ou `1` (erro técnico).
+
+Na execução real sobre as 11 execuções registradas, foram coletadas 48 medidas
+(situações `ok=38`, `atencao=8`, `critico=2`), com destaque para
+`drift.proporcao_drift = 0,590909` (`run-f203-deteccao`) e
+`modelo.roc_auc = 0,461174` (`run-f205-avaliacao`) em estado crítico.
+
+```powershell
+uv run pytest tests/observabilidade/metricas_saude/ -q
+```
+
+## Integração de drift, métricas e alertas — F3-03
+
+O componente [src/monitoramento/observabilidade/alertas/](src/monitoramento/observabilidade/alertas/) integra
+os artefatos já consolidados — as métricas de saúde (`reports/saude/saude.json`,
+F3-02) e os logs operacionais (`reports/logs/resumo.json`, F3-01) — e aplica os
+critérios declarados em [configs/alertas.json](configs/alertas.json):
+
+- medida de saúde com situação `atencao` gera alerta `warning`;
+- medida de saúde com situação `critico` gera alerta `critical`;
+- falha de execução ou de contrato registrada nos logs gera alerta `critical`;
+- evento `drift_alert` registrado nos logs gera alerta `warning`.
+
+```powershell
+uv run python -m monitoramento.observabilidade.alertas --saude reports/saude/saude.json --logs-resumo reports/logs/resumo.json --config configs/alertas.json --output-dir reports/alertas
+```
+
+| Artefato | Local |
+|---|---|
+| Alertas, bloco de drift e resumo | `reports/alertas/alertas.json` |
+
+Cada alerta é identificável (`id`, `severidade`, `categoria`, `origem`, `fonte`,
+`valor`, `situacao`, `error_code` e `evidencia`) e contabilizável. O artefato
+reúne ainda um bloco consolidado de drift (presença, variáveis com drift,
+proporção e total de alertas) e um resumo por severidade, categoria e origem.
+O bloco `drift.por_execucao` preserva os resultados de cada execução. Os campos
+de destaque (`dataset_drift`, `variaveis_com_drift` e `proporcao_drift`) pertencem
+à mesma `execucao_resumo`: a de maior proporção, com desempate por quantidade
+e `run_id`. Esse destaque é histórico, não o resultado mais recente; a análise
+estatística não fornece `dataset_drift`, que permanece nulo nesse caso. O total
+de alertas continua agregado sobre todas as execuções.
+
+A configuração exige as situações `atencao` e `critico`, mapeadas para as
+severidades suportadas (`warning` e `critical`). Antes da publicação, o componente
+valida a versão principal e a estrutura dos contratos de saúde e logs, incluindo
+as medidas e os eventos consumidos. Arquivos vazios (`{}`), coleções malformadas
+e versões incompatíveis encerram com código `1`, sem criar ou sobrescrever
+`alertas.json`. Coleções legitimamente vazias em contratos válidos são aceitas.
+
+O componente apenas integra e sinaliza: não relê os artefatos brutos, não altera
+as etapas anteriores e não converte alerta em erro — encerra com código `0`
+(sucesso) ou `1` (erro técnico). Os artefatos ficam em `reports/alertas/`,
+ignorado pelo Git.
+
+Na execução real sobre os relatórios consolidados, foram integrados 14 alertas
+(`warning=11`, `critical=3`), com o bloco de drift indicando `dataset_drift=True`,
+13 variáveis com drift, proporção 0,590909 e 3 alertas de drift.
+
+```powershell
+uv run pytest tests/observabilidade/alertas/ tests/observabilidade/integracao/test_saude_alertas_regressoes.py -q
+```
+
+## Dashboard de monitoramento — F3-04
+
+O componente [src/monitoramento/observabilidade/dashboard/app.py](src/monitoramento/observabilidade/dashboard/app.py) é o
+painel Streamlit que reúne os resultados persistidos pelas etapas anteriores. Ele
+lê os eventos e manifestos de cada execução em `reports/runs/<run_id>/` e os
+artefatos consolidados — logs operacionais (F3-01), métricas de saúde (F3-02) e
+alertas integrados (F3-03) — sem executar treino nem alterar dados.
+
+```powershell
+uv run streamlit run src/monitoramento/observabilidade/dashboard/app.py
+```
+
+Os caminhos das fontes são configuráveis na barra lateral; por padrão:
+`reports/runs`, `reports/logs/resumo.json`, `reports/saude/saude.json` e
+`reports/alertas/alertas.json`.
+
+| Aba | Conteúdo |
+|---|---|
+| Visão geral | Execuções, taxa de sucesso, falhas, rejeições, alertas, saúde dos artefatos e histórico por etapa |
+| Saúde operacional | Medidas de saúde por execução e agregados, filtráveis por categoria (F3-02) |
+| Drift | Destaque histórico identificado por execução, resultados individuais e total de alertas (F3-03) |
+| Alertas | Alertas por severidade, categoria e origem, com filtros (F3-03) |
+| Logs e falhas | Contagens de execuções e eventos por categoria, além das falhas registradas (F3-01) |
+
+O painel é tolerante a ausências: artefato inexistente aparece como
+`indisponivel` sem impedir as demais abas, e execução sem evento terminal é
+apresentada como incompleta, sem inferir sucesso.
+
+Eventos com JSON inválido ou valores que não sejam objetos são ignorados.
+Falhas de acesso ou de codificação de um arquivo de eventos ficam isoladas à
+execução, sem impedir as demais abas nem confirmar sucesso por leitura parcial.
+Relatórios de alertas ausentes, ilegíveis ou sem resumo e coleção utilizáveis
+aparecem como indisponíveis; seus indicadores exibem `—`. Zero é exibido apenas
+quando confirmado por um relatório válido.
+
+```powershell
+uv run pytest tests/observabilidade/dashboard/ tests/observabilidade/integracao/test_alertas_dashboard_regressoes.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -898,6 +1075,24 @@ Concluídos:
   `performance.json`, evento `drift_alert` sem converter alerta em erro e testes
   em `tests/simulacao/concept_drift` e `tests/avaliacao/concept_drift`.
 
+- Consolidação dos logs operacionais (F3-01), com classificação dos eventos por
+  categoria e resultado, resumo de sucessos, falhas de contrato e alertas em
+  `reports/logs/` e testes em `tests/observabilidade/logs/`.
+- Definição e coleta das métricas de saúde operacional (F3-02), com catálogo de
+  15 métricas em 5 categorias, coleta a partir dos artefatos persistidos,
+  classificação por situação com dois níveis de limiar (`atencao`/`critico`),
+  medidas em `reports/saude/saude.json` e testes em
+  `tests/observabilidade/metricas_saude/`.
+- Integração de drift, métricas e alertas (F3-03), com critérios de alerta em
+  `configs/alertas.json`, sinalização de falhas e degradação com severidade,
+  bloco consolidado de drift, alertas identificáveis e contabilizáveis em
+  `reports/alertas/alertas.json` e testes em `tests/observabilidade/alertas/`.
+- Dashboard de monitoramento (F3-04), com painel Streamlit em abas por tema
+  (visão geral, saúde operacional, drift, alertas e logs), fontes configuráveis
+  na barra lateral, tratamento de artefatos ausentes como `indisponivel` e de
+  execuções sem evento terminal como incompletas, e testes das funções de carga
+  e agregação em `tests/observabilidade/dashboard/`.
+
 Pendentes:
 
 - Confirmação da licença de uso do dataset.
@@ -909,4 +1104,3 @@ Pendentes:
 - Validação funcional integrada do pipeline com dados sintéticos, além dos
   testes isolados de obtenção, de preparação do dataset, de treinamento e de
   validação.
-- Implementação das etapas restantes do pipeline (dashboard).

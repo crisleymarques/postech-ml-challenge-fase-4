@@ -85,16 +85,19 @@ flowchart TD
 
 | Componente em `src/monitoramento/` | Estado e responsabilidade | Consome | Produz |
 | --- | --- | --- | --- |
-| `preparacao.py` | Implementado: ler a fonte configurada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto com contrato semântico do alvo |
-| `validacao.py` | Implementado: aplicar contrato Pandera e bloquear conjunto inválido | Manifesto do produtor e contrato de qualidade | Relatório de qualidade e manifesto de aprovação ou rejeição |
-| `treinamento.py` | Implementado: ajustar no treino, selecionar na validação e avaliar no teste | Partições aprovadas e contrato do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
-| `simulacao/data_drift/` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
-| Predição | Implementado: aplicar o pipeline treinado após aprovação | Manifestos de treinamento, simulação e validação de produção | Predições vinculadas ao modelo e lote |
-| Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
-| `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
+| `preparacao.py` | Ler a fonte autorizada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto de preparação |
+| `validacao.py` | Aplicar o contrato Pandera e bloquear o conjunto inteiro quando inválido | Manifesto do conjunto e versão do contrato | Relatório de qualidade e manifesto de aprovação ou rejeição |
+| `treinamento.py` | Ajustar pré-processamento e classificador no treino; selecionar pela validação; avaliar no teste após seleção | Partições aprovadas e configuração do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
+| `simulacao/data_drift/` | Produzir lotes independentes, com cenário de controle e mudanças configuradas | Base de simulação, cenário e seed | Lotes por período e manifesto de cada cenário |
 | `simulacao/concept_drift/` | Gerar cenário de Concept Drift alterando a relação entre perfil e desfecho de um segmento, mantendo as features | Base de simulação, segmento e regra de mudança | Features inalteradas, rótulos do novo conceito, rótulos originais e manifesto do cenário |
+| `predicao/` | Aplicar o mesmo pipeline do treinamento | Manifestos de treinamento, simulacao e validacao de producao | Predições e manifesto com vínculos ao modelo e lote |
+| `drift/deteccao/` | Comparar referência e lote com Evidently; avaliar desempenho somente com rótulos compatíveis | Referência, lote aprovado, predições e configuração de detecção | Resultados estatísticos, alertas e HTML |
+| `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
 | `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
-| Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
+| `observabilidade/logs/` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
+| `observabilidade/metricas_saude/` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
+| `observabilidade/alertas/` | Integrar logs, métricas de saúde e resultados de drift; sinalizar falhas e degradação | `reports/saude/saude.json`, `reports/logs/resumo.json` e catálogo de alertas | Alertas classificáveis e contáveis, bloco consolidado de drift e resumo (`alertas.json`) |
+| `observabilidade/dashboard/` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
 aprende imputação, escalas, codificações ou seleção de variáveis a partir do
@@ -315,28 +318,93 @@ Cada etapa usa o mesmo contrato de evento: `timestamp`, `run_id`, `stage`,
 `drift_alert`; `level` admite `INFO`, `WARNING` e `ERROR`. A validação inclui
 eventos de falha mesmo quando nenhum artefato de dados for aprovado.
 
+O componente `observabilidade/logs/` consolida os `events.jsonl` de todas as execuções em
+`reports/logs/operacional.jsonl` e publica `reports/logs/resumo.json` com a
+contagem por status de execução, por categoria operacional e por resultado, a
+lista de falhas (com `error_code`) e a lista de alertas. Cada evento recebe uma
+categoria derivada da etapa — `ingestao`, `transformacao`, `validacao`,
+`treinamento`, `simulacao`, `predicao`, `drift` ou `avaliacao` — e um resultado
+derivado do tipo de evento — `inicio`, `sucesso`, `rejeicao`, `falha`, `alerta`
+ou `ignorado`. A etapa `preparacao` alimenta as categorias `ingestao` e
+`transformacao`, que ocorrem de forma acoplada; as transformações aplicadas são
+lidas do manifesto. Manifestos com status `failed` ou `rejected` complementam a
+lista de falhas quando o evento terminal equivalente não foi persistido, usando
+`run_id`, `stage`, `error_code` e `finished_at`, sem duplicar falhas ou criar
+eventos no log original. As demais execuções sem publicação terminal confirmada
+são contadas como `incomplete`, sem inferir sucesso.
+
 Cada `metrics.json` contém `run_id` e lista `measurements`, com objetos
 `name`, `value`, `unit` e `availability`. `value` é número ou nulo;
 `availability` é `available`, `not_available` ou `not_applicable`.
 
-O catálogo abaixo apresenta medidas candidatas de monitoramento. A interface
-e o caminho de exportação estão definidos; a seleção das métricas e de seus
-limiares permanece pendente:
+O catálogo de métricas de saúde operacional está definido em
+`configs/metricas_saude.json` e rege a coleta. Cada métrica declara `id`,
+`categoria`, `nome`, `semantica`, `unidade`, `escopo` (`execucao` ou
+`agregado`), `etapas` (nulo quando aplicável a todas), `coleta`, `criterio`,
+`direcao` (`maior_pior` ou `menor_pior`) e os limiares `limiar_degracao` e
+`limiar_falha`. O componente `observabilidade/metricas_saude/` coleta os valores dos
+artefatos persistidos, marca a disponibilidade e classifica cada medida em
+`ok`, `atencao`, `critico`, `indisponivel` ou `nao_aplicavel`. A sinalização e
+o alerta efetivos ficam na integração do F3-03; esta etapa apenas coleta e
+classifica.
 
-| Categoria | Medidas candidatas | Apresentação esperada |
+| Categoria | Métricas | Semântica e coleta |
 | --- | --- | --- |
-| Pipeline | Status por etapa, duração e volume processado | Histórico por execução e etapa; distinção de falha, rejeição e sucesso |
-| Qualidade | Lotes rejeitados e violações por regra | Alertas de bloqueio e vínculo ao relatório de qualidade |
-| Drift | Resultados por variável e quantidade de alertas | Referência, cenário, período, método e limiar visíveis |
-| Modelo | Métricas de classificação escolhidas pelo grupo | Valor com modelo, partição, período e cobertura de rótulos |
-| Infraestrutura local | Espaço livre para artefatos e capacidade de persistir saídas | Diagnóstico de indisponibilidade e erros de escrita, sem confundir com drift |
+| Pipeline | `status_execucao`, `duracao_s`, `volume_linhas`, `taxa_sucesso`, `falhas_total` | Do manifesto (`status`, `finished_at` − `started_at`, linhas de saída) e das contagens das execuções e falhas |
+| Qualidade | `violacoes_total`, `lotes_rejeitados` | Violações somadas de `quality.json` e contagem de execuções `rejected` |
+| Drift | `dataset_drift`, `variaveis_com_drift`, `proporcao_drift`, `alertas_total`, `degradacao_conceito` | De `drift.json`/`analise.json` (contagem e proporção de variáveis) e eventos `drift_alert` |
+| Modelo | `roc_auc` | `roc_auc` do modelo no cenário de Concept Drift (`performance.json`) |
+| Infraestrutura local | `espaco_livre_bytes`, `escrita_ok` | Espaço em disco e teste de escrita no diretório de saída |
 
-O dashboard lê os diretórios de execução, consolida eventos por ID e oferece
-filtros por etapa, cenário e lote. Exibe origem e horário da última atualização,
-estado vazio quando não houver execuções e aviso para resultados incompletos.
-Execução iniciada sem evento terminal é apresentada como incompleta, sem
-inferir sucesso. Um manifesto inválido ou relatório ausente deve aparecer
-como indisponível e não impedir a exibição dos outros resultados.
+Os limiares operacionais definidos são: duração 60 s (atenção) e 300 s
+(crítico); volume de ao menos 1 linha; taxa de sucesso 0,9 (atenção) e 0,5
+(crítico); proporção de variáveis com drift 0,1 (atenção) e 0,5 (crítico);
+`roc_auc` 0,6 (atenção) e 0,5 (crítico); espaço livre 1 GiB (atenção) e 256 MiB
+(crítico). Métricas sem direção (como `alertas_total`) são informativas.
+Alerta de drift e mudança de distribuição não são erro de execução.
+
+Em métricas `menor_pior`, a situação muda apenas abaixo do limiar; em
+`maior_pior`, muda a partir do limiar, incluindo a igualdade. A publicação de
+`saude.json` usa arquivo temporário no mesmo diretório e substituição atômica,
+sem expor JSON parcial aos consumidores nem perder a versão anterior caso a
+atualização falhe.
+
+O componente `observabilidade/alertas/` integra logs, métricas de saúde e resultados de drift
+em um único artefato. Ele lê os relatórios já consolidados
+(`reports/saude/saude.json` e `reports/logs/resumo.json`) e aplica os critérios
+declarados em `configs/alertas.json`: medida com situação `atencao` gera alerta
+`warning`; medida com situação `critico` gera alerta `critical`; falha de
+execução ou de contrato registrada nos logs gera alerta `critical`; evento
+`drift_alert` gera alerta `warning`. Cada alerta é identificável (com origem,
+severidade, categoria, valor e evidência) e contabilizável; o artefato reúne
+ainda um bloco consolidado de drift (presença, variáveis com drift, proporção e
+total de alertas) e um resumo por severidade, categoria e origem. A consolidação
+preserva os resultados individuais em `drift.por_execucao`. Os três campos de
+destaque vêm de uma única `execucao_resumo`, selecionada pela maior proporção,
+depois quantidade e `run_id` como desempates. É um destaque histórico, sem
+inferência de resultado recente ou de `dataset_drift` ausente na análise
+estatística. A contagem de alertas permanece agregada. Antes da publicação,
+versão e estrutura dos contratos de saúde/logs são validadas, assim como os
+mapeamentos das duas situações e as severidades suportadas. Entrada inválida
+encerra com código `1` sem criar nem sobrescrever o relatório; listas vazias
+em contratos válidos são aceitas. A integração
+não altera as etapas anteriores e não converte alerta em erro: código `0` no
+sucesso e `1` em falha técnica.
+
+O componente `observabilidade/dashboard/` é o painel Streamlit que reúne os resultados
+persistidos. Ele lê os diretórios de execução (`reports/runs/<run_id>/`,
+manifesto e eventos) e os artefatos consolidados dos F3-01/02/03, com os
+caminhos das fontes configuráveis na barra lateral. A interface organiza a
+visualização em abas por tema: visão geral (execuções, taxa de sucesso, falhas,
+rejeições, alertas e saúde dos artefatos), saúde operacional (medidas por
+execução e agregados, filtráveis por categoria), drift (bloco consolidado),
+alertas (por severidade, categoria e origem) e logs e falhas. Exibe a origem e o
+horário da última atualização de cada artefato, estado vazio quando não houver
+execuções e aviso para resultados incompletos. Execução iniciada sem evento
+terminal é apresentada como incompleta, sem inferir sucesso. Um manifesto
+inválido ou relatório ausente aparece como `indisponivel` e não impede a
+exibição dos outros resultados. O painel é somente leitura: não executa treino,
+não altera dados nem publica novos artefatos.
 
 Logs não incluem amostras de linhas, features individuais, PII ou credenciais.
 Relatórios HTML devem ser revisados antes de compartilhamento: ferramentas
@@ -350,9 +418,10 @@ Preparação, validação e treinamento já geram seus diretórios e artefatos.
 Simulação, predição, detecção e dashboard ainda são planejados. Dados ficam em
 `data/reference/` e `data/analysis/`, e modelos em `models/`, conforme as
 exclusões atuais.
-`reports/` não possui exclusão geral no setup: logs, configurações e relatórios
-não devem ser publicados automaticamente. A equipe deve revisar seu conteúdo
-e definir retenção e eventual exclusão antes de produzi-los ou compartilhá-los.
+`reports/runs/`, `reports/logs/`, `reports/saude/` e `reports/alertas/` são
+ignorados pelo Git: logs, configurações, métricas de saúde, alertas e relatórios
+gerados não são publicados automaticamente. A equipe deve revisar seu conteúdo e
+definir retenção e eventual exclusão antes de produzi-los ou compartilhá-los.
 
 Nenhuma etapa implementada usa bancos de dados. Automação, API de serving,
 nuvem e retreinamento automático exigem decisão posterior de escopo.
