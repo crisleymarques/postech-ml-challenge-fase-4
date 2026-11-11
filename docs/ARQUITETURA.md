@@ -382,12 +382,20 @@ total de alertas) e um resumo por severidade, categoria e origem. A consolidaç�
 não altera as etapas anteriores e não converte alerta em erro: código `0` no
 sucesso e `1` em falha técnica.
 
-O dashboard lê os diretórios de execução, consolida eventos por ID e oferece
-filtros por etapa, cenário e lote. Exibe origem e horário da última atualização,
-estado vazio quando não houver execuções e aviso para resultados incompletos.
-Execução iniciada sem evento terminal é apresentada como incompleta, sem
-inferir sucesso. Um manifesto inválido ou relatório ausente deve aparecer
-como indisponível e não impedir a exibição dos outros resultados.
+O componente `dashboard.py` é o painel Streamlit que reúne os resultados
+persistidos. Ele lê os diretórios de execução (`reports/runs/<run_id>/`,
+manifesto e eventos) e os artefatos consolidados dos F3-01/02/03, com os
+caminhos das fontes configuráveis na barra lateral. A interface organiza a
+visualização em abas por tema: visão geral (execuções, taxa de sucesso, falhas,
+rejeições, alertas e saúde dos artefatos), saúde operacional (medidas por
+execução e agregados, filtráveis por categoria), drift (bloco consolidado),
+alertas (por severidade, categoria e origem) e logs e falhas. Exibe a origem e o
+horário da última atualização de cada artefato, estado vazio quando não houver
+execuções e aviso para resultados incompletos. Execução iniciada sem evento
+terminal é apresentada como incompleta, sem inferir sucesso. Um manifesto
+inválido ou relatório ausente aparece como `indisponivel` e não impede a
+exibição dos outros resultados. O painel é somente leitura: não executa treino,
+não altera dados nem publica novos artefatos.
 
 Logs não incluem amostras de linhas, features individuais, PII ou credenciais.
 Relatórios HTML devem ser revisados antes de compartilhamento: ferramentas

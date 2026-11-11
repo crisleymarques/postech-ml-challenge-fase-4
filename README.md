@@ -99,8 +99,8 @@ A análise estática também passou.
 
 Essas verificações não validam o pipeline completo. As etapas de obtenção,
 preparação, treinamento, validação, simulação (Data e Concept Drift), predição,
-detecção e análise de drift possuem testes isolados descritos abaixo; o dashboard
-permanece pendente.
+detecção e análise de drift, além dos logs, métricas e alertas e do dashboard,
+possuem testes isolados descritos abaixo.
 
 ## Arquitetura e contratos
 
@@ -124,8 +124,8 @@ a referência de drift é congelada a partir das features de treino.
 Os scripts de obtenção/amostragem do dataset e de preparação e separação das
 partições estão implementados, assim como o contrato Pandera, o treinamento, a
 simulação (Data e Concept Drift), a predição, a detecção e a análise estatística
-do drift e a consolidação dos logs operacionais. O dashboard ainda não está
-implementado. A documentação de arquitetura
+do drift, a consolidação dos logs operacionais, as métricas de saúde, os alertas
+e o dashboard Streamlit. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
 
 ## Dataset — PREP-02
@@ -948,6 +948,38 @@ Na execução real sobre os relatórios consolidados, foram integrados 14 alerta
 uv run pytest tests/test_alertas.py -q
 ```
 
+## Dashboard de monitoramento — F3-04
+
+O componente [src/monitoramento/dashboard.py](src/monitoramento/dashboard.py) é o
+painel Streamlit que reúne os resultados persistidos pelas etapas anteriores. Ele
+lê os eventos e manifestos de cada execução em `reports/runs/<run_id>/` e os
+artefatos consolidados — logs operacionais (F3-01), métricas de saúde (F3-02) e
+alertas integrados (F3-03) — sem executar treino nem alterar dados.
+
+```powershell
+uv run streamlit run src/monitoramento/dashboard.py
+```
+
+Os caminhos das fontes são configuráveis na barra lateral; por padrão:
+`reports/runs`, `reports/logs/resumo.json`, `reports/saude/saude.json` e
+`reports/alertas/alertas.json`.
+
+| Aba | Conteúdo |
+|---|---|
+| Visão geral | Execuções, taxa de sucesso, falhas, rejeições, alertas, saúde dos artefatos e histórico por etapa |
+| Saúde operacional | Medidas de saúde por execução e agregados, filtráveis por categoria (F3-02) |
+| Drift | Bloco consolidado de drift: presença, variáveis com drift, proporção e alertas (F3-03) |
+| Alertas | Alertas por severidade, categoria e origem, com filtros (F3-03) |
+| Logs e falhas | Contagens de execuções e eventos por categoria, além das falhas registradas (F3-01) |
+
+O painel é tolerante a ausências: artefato inexistente aparece como
+`indisponivel` sem impedir as demais abas, e execução sem evento terminal é
+apresentada como incompleta, sem inferir sucesso.
+
+```powershell
+uv run pytest tests/test_dashboard.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -1034,6 +1066,11 @@ Concluídos:
   `configs/alertas.json`, sinalização de falhas e degradação com severidade,
   bloco consolidado de drift, alertas identificáveis e contabilizáveis em
   `reports/alertas/alertas.json` e testes em `tests/test_alertas.py`.
+- Dashboard de monitoramento (F3-04), com painel Streamlit em abas por tema
+  (visão geral, saúde operacional, drift, alertas e logs), fontes configuráveis
+  na barra lateral, tratamento de artefatos ausentes como `indisponivel` e de
+  execuções sem evento terminal como incompletas, e testes das funções de carga
+  e agregação em `tests/test_dashboard.py`.
 
 Pendentes:
 
@@ -1046,4 +1083,5 @@ Pendentes:
 - Validação funcional integrada do pipeline com dados sintéticos, além dos
   testes isolados de obtenção, de preparação do dataset, de treinamento e de
   validação.
-- Implementação das etapas restantes do pipeline (dashboard).
+- Evidências visuais do dashboard (capturas das abas) e registro do acesso,
+  conforme a issue F3-04.
