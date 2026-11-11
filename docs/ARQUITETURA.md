@@ -85,16 +85,17 @@ flowchart TD
 
 | Componente em `src/monitoramento/` | Estado e responsabilidade | Consome | Produz |
 | --- | --- | --- | --- |
-| `preparacao.py` | Implementado: ler a fonte configurada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto com contrato semântico do alvo |
-| `validacao.py` | Implementado: aplicar contrato Pandera e bloquear conjunto inválido | Manifesto do produtor e contrato de qualidade | Relatório de qualidade e manifesto de aprovação ou rejeição |
-| `treinamento.py` | Implementado: ajustar no treino, selecionar na validação e avaliar no teste | Partições aprovadas e contrato do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
-| `simulacao/data_drift/` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
-| Predição | Implementado: aplicar o pipeline treinado após aprovação | Manifestos de treinamento, simulação e validação de produção | Predições vinculadas ao modelo e lote |
-| Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
-| `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
+| `preparacao.py` | Ler a fonte autorizada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto de preparação |
+| `validacao.py` | Aplicar o contrato Pandera e bloquear o conjunto inteiro quando inválido | Manifesto do conjunto e versão do contrato | Relatório de qualidade e manifesto de aprovação ou rejeição |
+| `treinamento.py` | Ajustar pré-processamento e classificador no treino; selecionar pela validação; avaliar no teste após seleção | Partições aprovadas e configuração do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
+| `simulacao/data_drift/` | Produzir lotes independentes, com cenário de controle e mudanças configuradas | Base de simulação, cenário e seed | Lotes por período e manifesto de cada cenário |
 | `simulacao/concept_drift/` | Gerar cenário de Concept Drift alterando a relação entre perfil e desfecho de um segmento, mantendo as features | Base de simulação, segmento e regra de mudança | Features inalteradas, rótulos do novo conceito, rótulos originais e manifesto do cenário |
+| `predicao/` | Aplicar o mesmo pipeline do treinamento | Manifestos de treinamento, simulacao e validacao de producao | Predições e manifesto com vínculos ao modelo e lote |
+| `drift/deteccao/` | Comparar referência e lote com Evidently; avaliar desempenho somente com rótulos compatíveis | Referência, lote aprovado, predições e configuração de detecção | Resultados estatísticos, alertas e HTML |
+| `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
 | `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
-| Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
+| `logs.py` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
+| `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
 aprende imputação, escalas, codificações ou seleção de variáveis a partir do
@@ -315,6 +316,18 @@ Cada etapa usa o mesmo contrato de evento: `timestamp`, `run_id`, `stage`,
 `drift_alert`; `level` admite `INFO`, `WARNING` e `ERROR`. A validação inclui
 eventos de falha mesmo quando nenhum artefato de dados for aprovado.
 
+O componente `logs.py` consolida os `events.jsonl` de todas as execuções em
+`reports/logs/operacional.jsonl` e publica `reports/logs/resumo.json` com a
+contagem por status de execução, por categoria operacional e por resultado, a
+lista de falhas (com `error_code`) e a lista de alertas. Cada evento recebe uma
+categoria derivada da etapa — `ingestao`, `transformacao`, `validacao`,
+`treinamento`, `simulacao`, `predicao`, `drift` ou `avaliacao` — e um resultado
+derivado do tipo de evento — `inicio`, `sucesso`, `rejeicao`, `falha`, `alerta`
+ou `ignorado`. A etapa `preparacao` alimenta as categorias `ingestao` e
+`transformacao`, que ocorrem de forma acoplada; as transformações aplicadas são
+lidas do manifesto. Execução sem evento terminal é contada como `incomplete`,
+sem inferir sucesso.
+
 Cada `metrics.json` contém `run_id` e lista `measurements`, com objetos
 `name`, `value`, `unit` e `availability`. `value` é número ou nulo;
 `availability` é `available`, `not_available` ou `not_applicable`.
@@ -350,9 +363,10 @@ Preparação, validação e treinamento já geram seus diretórios e artefatos.
 Simulação, predição, detecção e dashboard ainda são planejados. Dados ficam em
 `data/reference/` e `data/analysis/`, e modelos em `models/`, conforme as
 exclusões atuais.
-`reports/` não possui exclusão geral no setup: logs, configurações e relatórios
-não devem ser publicados automaticamente. A equipe deve revisar seu conteúdo
-e definir retenção e eventual exclusão antes de produzi-los ou compartilhá-los.
+`reports/runs/` e `reports/logs/` são ignorados pelo Git: logs, configurações e
+relatórios gerados não são publicados automaticamente. A equipe deve revisar seu
+conteúdo e definir retenção e eventual exclusão antes de produzi-los ou
+compartilhá-los.
 
 Nenhuma etapa implementada usa bancos de dados. Automação, API de serving,
 nuvem e retreinamento automático exigem decisão posterior de escopo.

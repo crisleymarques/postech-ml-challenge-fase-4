@@ -124,7 +124,7 @@ a referência de drift é congelada a partir das features de treino.
 Os scripts de obtenção/amostragem do dataset e de preparação e separação das
 partições estão implementados, assim como o contrato Pandera, o treinamento, a
 simulação (Data e Concept Drift), a predição, a detecção e a análise estatística
-do drift. O dashboard ainda não está
+do drift e a consolidação dos logs operacionais. O dashboard ainda não está
 implementado. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
 
@@ -824,6 +824,43 @@ evento `drift_alert` registrado.
 uv run pytest tests/simulacao/concept_drift tests/avaliacao/concept_drift -q
 ```
 
+## Logs operacionais centralizados — F3-01
+
+O componente [src/monitoramento/logs.py](src/monitoramento/logs.py) consolida os
+`events.jsonl` que cada etapa publica em `reports/runs/<run_id>/`, seguindo o
+contrato comum de evento. Cada evento é classificado por categoria operacional
+(ingestão, transformação, validação, treinamento, simulação, predição, drift e
+avaliação) e por resultado (início, sucesso, rejeição, falha, alerta e
+ignorado), sem alterar as etapas existentes — apenas agrega o que já é emitido.
+
+```powershell
+uv run python src/monitoramento/logs.py --runs-dir reports/runs --output-dir reports/logs
+```
+
+| Artefato | Local |
+|---|---|
+| Log operacional consolidado (todos os eventos) | `reports/logs/operacional.jsonl` |
+| Resumo com contagens, falhas e alertas | `reports/logs/resumo.json` |
+
+O resumo reúne o total de execuções e a contagem por status
+(`success`/`rejected`/`failed`/`incomplete`), a contagem por categoria e
+resultado, a lista de **falhas** com `run_id`, `stage` e `error_code` — o que
+torna as violações de contrato identificáveis — e a lista de **alertas** de
+drift com `scenario_id` e `batch_id`. A etapa `preparacao` realiza ingestão e
+transformação de forma acoplada; por isso seu desfecho alimenta as duas
+categorias e as transformações aplicadas são detalhadas a partir do manifesto.
+Execuções sem evento terminal aparecem como `incomplete`, sem inferir sucesso.
+Os artefatos ficam em `reports/logs/`, ignorado pelo Git, e a etapa encerra com
+código `0` (sucesso) ou `1` (erro técnico).
+
+Na execução real sobre as 11 execuções registradas, o log consolidou 25 eventos
+(10 sucessos e 1 rejeição), 1 falha de contrato (`QUALIDADE_REPROVADA`) e 3
+alertas de drift.
+
+```powershell
+uv run pytest tests/test_logs.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -897,6 +934,10 @@ Concluídos:
   comparação de desempenho entre conceito original e cenário em
   `performance.json`, evento `drift_alert` sem converter alerta em erro e testes
   em `tests/simulacao/concept_drift` e `tests/avaliacao/concept_drift`.
+
+- Consolidação dos logs operacionais (F3-01), com classificação dos eventos por
+  categoria e resultado, resumo de sucessos, falhas de contrato e alertas em
+  `reports/logs/` e testes em `tests/test_logs.py`.
 
 Pendentes:
 
