@@ -199,7 +199,9 @@ def test_indicadores_sem_alertas() -> None:
 
     assert ind["execucoes"] == 0
     assert ind["taxa_sucesso"] is None
-    assert ind["alertas_total"] == 0
+    assert ind["alertas_total"] is None
+    assert ind["alertas_warning"] is None
+    assert ind["alertas_critical"] is None
     assert ind["dataset_drift"] is None
 
 

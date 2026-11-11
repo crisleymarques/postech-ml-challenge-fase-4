@@ -62,7 +62,7 @@ def ler_json(caminho: Path) -> dict[str, Any] | None:
     try:
         with caminho.open(encoding="utf-8") as arquivo:
             conteudo = json.load(arquivo)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, UnicodeError):
         return None
     return conteudo if isinstance(conteudo, dict) else None
 
@@ -72,16 +72,47 @@ def ler_eventos(caminho: Path) -> list[dict[str, Any]]:
     eventos: list[dict[str, Any]] = []
     if not caminho.is_file():
         return eventos
-    with caminho.open(encoding="utf-8") as arquivo:
-        for linha in arquivo:
-            conteudo = linha.strip()
-            if not conteudo:
-                continue
-            try:
-                eventos.append(json.loads(conteudo))
-            except json.JSONDecodeError:
-                continue
+    try:
+        with caminho.open(encoding="utf-8") as arquivo:
+            for linha in arquivo:
+                conteudo = linha.strip()
+                if not conteudo:
+                    continue
+                try:
+                    evento = json.loads(conteudo)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(evento, dict):
+                    eventos.append(evento)
+    except (OSError, UnicodeError):
+        # Leitura incompleta nao confirma a publicacao de sucesso.
+        return []
     return eventos
+
+
+def resumo_alertas(artefato: dict[str, Any] | None) -> dict[str, Any]:
+    """Retorna contagens confirmadas; um resumo ausente ou invalido nao e zero."""
+    resumo = (artefato or {}).get("resumo")
+    if not isinstance(resumo, dict):
+        return {}
+    severidades = resumo.get("por_severidade")
+    if not isinstance(severidades, dict):
+        return {}
+    contagens = [
+        resumo.get("total"),
+        *(severidades.get(s) for s in (SEVERIDADE_WARNING, SEVERIDADE_CRITICAL)),
+    ]
+    if any(type(valor) is not int or valor < 0 for valor in contagens):
+        return {}
+    return resumo
+
+
+def ler_alertas(caminho: Path) -> dict[str, Any] | None:
+    """Le o relatorio de alertas, exigindo resumo e colecao utilizaveis."""
+    artefato = ler_json(caminho)
+    if not resumo_alertas(artefato) or not isinstance(artefato.get("alertas"), list):
+        return None
+    return artefato
 
 
 def inferir_status(eventos: list[dict[str, Any]]) -> str:
@@ -163,12 +194,15 @@ def carregar_painel(
 ) -> dict[str, Any]:
     """Carrega as execucoes e os artefatos consolidados para o painel."""
     execucoes = carregar_execucoes(runs_dir)
+    logs = ler_json(logs_path)
+    saude = ler_json(saude_path)
+    alertas = ler_alertas(alertas_path)
     return {
         "execucoes": execucoes,
         "resumo_execucoes": resumir_execucoes(execucoes),
-        "logs": ler_json(logs_path),
-        "saude": ler_json(saude_path),
-        "alertas": ler_json(alertas_path),
+        "logs": logs,
+        "saude": saude,
+        "alertas": alertas,
         "fontes": {
             "runs_dir": runs_dir.as_posix(),
             "logs": logs_path.as_posix(),
@@ -176,9 +210,9 @@ def carregar_painel(
             "alertas": alertas_path.as_posix(),
         },
         "disponibilidade": {
-            "logs": logs_path.is_file(),
-            "saude": saude_path.is_file(),
-            "alertas": alertas_path.is_file(),
+            "logs": logs is not None,
+            "saude": saude is not None,
+            "alertas": alertas is not None,
         },
     }
 
@@ -195,8 +229,8 @@ def indicadores(painel: dict[str, Any]) -> dict[str, Any]:
     execucoes = painel["execucoes"]
     por_status = painel["resumo_execucoes"]["por_status"]
     alertas = painel.get("alertas") or {}
-    resumo_alertas = alertas.get("resumo") or {}
-    por_severidade = resumo_alertas.get("por_severidade") or {}
+    resumo = resumo_alertas(alertas)
+    por_severidade = resumo.get("por_severidade") or {}
     drift = alertas.get("drift") or {}
     return {
         "execucoes": len(execucoes),
@@ -205,9 +239,9 @@ def indicadores(painel: dict[str, Any]) -> dict[str, Any]:
         "rejeicoes": por_status.get(STATUS_REJEICAO, 0),
         "falhas": por_status.get(STATUS_FALHA, 0),
         "incompletas": len(painel["resumo_execucoes"]["incompletas"]),
-        "alertas_total": resumo_alertas.get("total", 0),
-        "alertas_warning": por_severidade.get(SEVERIDADE_WARNING, 0),
-        "alertas_critical": por_severidade.get(SEVERIDADE_CRITICAL, 0),
+        "alertas_total": resumo.get("total"),
+        "alertas_warning": por_severidade.get(SEVERIDADE_WARNING),
+        "alertas_critical": por_severidade.get(SEVERIDADE_CRITICAL),
         "dataset_drift": drift.get("dataset_drift"),
         "variaveis_com_drift": drift.get("variaveis_com_drift"),
     }
@@ -269,12 +303,16 @@ def render_visao_geral(painel: dict[str, Any]) -> None:
     colunas[1].metric("Taxa de sucesso", "—" if taxa is None else f"{taxa:.1%}")
     colunas[2].metric("Falhas", ind["falhas"])
     colunas[3].metric("Rejeições", ind["rejeicoes"])
-    colunas[4].metric("Alertas", ind["alertas_total"])
+    colunas[4].metric("Alertas", "—" if ind["alertas_total"] is None else ind["alertas_total"])
 
     st.subheader("Alertas e drift")
     colunas = st.columns(4)
-    colunas[0].metric("Alertas críticos", ind["alertas_critical"])
-    colunas[1].metric("Alertas de atenção", ind["alertas_warning"])
+    colunas[0].metric(
+        "Alertas críticos", "—" if ind["alertas_critical"] is None else ind["alertas_critical"]
+    )
+    colunas[1].metric(
+        "Alertas de atenção", "—" if ind["alertas_warning"] is None else ind["alertas_warning"]
+    )
     drift = ind["dataset_drift"]
     colunas[2].metric("Data drift", "—" if drift is None else ("sim" if drift else "não"))
     variaveis = ind["variaveis_com_drift"]
@@ -414,7 +452,7 @@ def render_drift(painel: dict[str, Any]) -> None:
 def render_alertas(painel: dict[str, Any]) -> None:
     """Aba de alertas: lista por severidade, categoria e origem."""
     alertas = painel["alertas"]
-    if alertas is None:
+    if not resumo_alertas(alertas):
         st.info("Relatório de alertas (F3-03) indisponível.")
         return
 
