@@ -1003,9 +1003,6 @@ Relatórios de alertas ausentes, ilegíveis ou sem resumo e coleção utilizáve
 aparecem como indisponíveis; seus indicadores exibem `—`. Zero é exibido apenas
 quando confirmado por um relatório válido.
 
-A [revalidação dos critérios da F3-04](docs/VALIDACAO_F3_04.md) registra as
-evidências, a captura já publicada no PR e o acesso local ao painel.
-
 ```powershell
 uv run pytest tests/test_dashboard.py tests/test_dashboard_resiliencia.py tests/test_alertas_dashboard_regressoes.py -q
 ```
