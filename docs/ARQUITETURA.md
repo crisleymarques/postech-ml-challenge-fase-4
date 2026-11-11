@@ -396,3 +396,16 @@ Kolmogorov-Smirnov, interpretação, resultados, serviço e CLI. A leitura e
 seleção de features reutilizam `drift/dados.py`; arquivos, manifestos e eventos
 reutilizam `infraestrutura/`. A análise não importa o adaptador Evidently.
 O comando é `uv run analisar-drift`; os testes ficam em `tests/drift/analise/`.
+
+A análise estatística avalia PSI e K-S independentemente: quantis insuficientes
+não invalidam um K-S calculável. Uma variável fica não avaliável somente quando
+nenhum teste está disponível. As features dos metadados são obrigatórias nas duas
+entradas; sua ausência bloqueia a execução sem relatório parcial.
+
+A análise reserva exclusivamente seu diretório e carrega os manifestos de entrada
+dentro da execução monitorada. O manifesto terminal é publicado atomicamente por
+último, após eventos e métricas. Falhas após o início produzem `failed`, código
+`ANALISE_INVALIDA`, métricas vazias e `outputs: []`, quando a persistência permite;
+IDs e entradas já resolvidos são mantidos para diagnóstico. Configuração inválida
+e destino existente são recusados antes de iniciar. Alertas de drift continuam
+sendo sucesso operacional.

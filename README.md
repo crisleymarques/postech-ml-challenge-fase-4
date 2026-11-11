@@ -664,6 +664,13 @@ uv run analisar-drift ^
 | Resultado por variável e interpretação | `reports/runs/<run_id>/analise.json` |
 | Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
 
+A execução reserva um diretório novo e publica o manifesto atomicamente por
+último, após os resultados e eventos finais. Falhas de entrada, cálculo ou IO
+retornam código 1 e, quando a persistência está disponível, publicam configuração,
+eventos, métricas vazias e manifesto `failed` com `outputs: []`. Artefatos parciais
+não são consumíveis. Configuração inválida e destino existente são recusados
+antes do início; reexecuções não sobrescrevem publicações anteriores.
+
 Todas as features dos metadados devem existir na referência e no lote.
 Uma coluna ausente bloqueia a análise, identifica a entrada incompatível e
 não produz um relatório parcial nem uma confirmação estatística fictícia.
@@ -693,6 +700,15 @@ variáveis foram classificadas com mudança (proporção de 0,3636, PSI máximo 
 documento também registra a ressalva de que referência e lote provêm de períodos
 distintos, de modo que parte das diferenças pode refletir a separação temporal e
 não apenas a alteração injetada.
+
+Na revalidação das correções do PR #37, usando a referência aprovada de
+59.997 linhas e o lote `batch-pr36` de 10.000 linhas já usados na validação
+do #36, duas análises independentes produziram os mesmos resultados:
+8/22 features com mudança (0,363636), PSI máximo 0,749836 e as cinco features
+alteradas confirmadas. Ambas emitiram `drift_alert` e terminaram em `success`.
+Os hashes dos dados e dos artefatos do modelo permaneceram inalterados, sem
+retreinar o baseline. Esses números correspondem a outra referência/lote
+em relação à execução histórica acima.
 
 ```powershell
 uv run pytest tests/drift/analise -q

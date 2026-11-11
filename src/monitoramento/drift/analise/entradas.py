@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -11,9 +12,22 @@ from monitoramento.infraestrutura import manifestos
 
 from .config import CONTRACT_VERSION, ErroAnalise
 
-carregar_manifesto = partial(
-    manifestos.carregar_manifesto, erro=ErroAnalise, contract_version=CONTRACT_VERSION
-)
+
+def carregar_manifesto(entrada: Path | dict[str, Any]) -> dict[str, Any]:
+    """Resolve caminhos e valida tambem manifestos recebidos pela API Python."""
+    if isinstance(entrada, Path):
+        return manifestos.carregar_manifesto(
+            entrada, erro=ErroAnalise, contract_version=CONTRACT_VERSION
+        )
+    if not isinstance(entrada, dict) or entrada.get("status") != "success":
+        raise ErroAnalise("Produtor nao concluiu com sucesso.")
+    if manifestos.versao_maior(entrada.get("contract_version")) != manifestos.versao_maior(
+        CONTRACT_VERSION
+    ):
+        raise ErroAnalise("Versao principal do contrato do manifesto incompativel.")
+    return entrada
+
+
 artefato = partial(manifestos.artefato, erro=ErroAnalise)
 verificar_artefato = partial(manifestos.verificar_artefato, erro=ErroAnalise)
 
