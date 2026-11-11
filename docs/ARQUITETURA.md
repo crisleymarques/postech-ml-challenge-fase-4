@@ -379,6 +379,15 @@ execução ou de contrato registrada nos logs gera alerta `critical`; evento
 severidade, categoria, valor e evidência) e contabilizável; o artefato reúne
 ainda um bloco consolidado de drift (presença, variáveis com drift, proporção e
 total de alertas) e um resumo por severidade, categoria e origem. A consolidação
+preserva os resultados individuais em `drift.por_execucao`. Os três campos de
+destaque vêm de uma única `execucao_resumo`, selecionada pela maior proporção,
+depois quantidade e `run_id` como desempates. É um destaque histórico, sem
+inferência de resultado recente ou de `dataset_drift` ausente na análise
+estatística. A contagem de alertas permanece agregada. Antes da publicação,
+versão e estrutura dos contratos de saúde/logs são validadas, assim como os
+mapeamentos das duas situações e as severidades suportadas. Entrada inválida
+encerra com código `1` sem criar nem sobrescrever o relatório; listas vazias
+em contratos válidos são aceitas. A integração
 não altera as etapas anteriores e não converte alerta em erro: código `0` no
 sucesso e `1` em falha técnica.
 
