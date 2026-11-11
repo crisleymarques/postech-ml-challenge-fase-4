@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from monitoramento import metricas_saude as ms
 from monitoramento.infraestrutura import arquivos
+from monitoramento.observabilidade.metricas_saude import catalogo, classificacao, resultados
 
-CATALOGO = Path(__file__).resolve().parents[1] / "configs/metricas_saude.json"
+CATALOGO = Path(__file__).resolve().parents[3] / "configs/metricas_saude.json"
 
 
 @pytest.mark.parametrize(
@@ -30,13 +30,13 @@ CATALOGO = Path(__file__).resolve().parents[1] / "configs/metricas_saude.json"
     ],
 )
 @pytest.mark.parametrize("posicao", [-1, 0, 1])
-def test_limites_do_catalogo_real(
-    metrica_id, limiar, passo, abaixo, igual, acima, posicao
-) -> None:
-    metrica = next(m for m in ms.carregar_catalogo(CATALOGO)["metricas"] if m["id"] == metrica_id)
+def test_limites_do_catalogo_real(metrica_id, limiar, passo, abaixo, igual, acima, posicao) -> None:
+    metrica = next(
+        m for m in catalogo.carregar_catalogo(CATALOGO)["metricas"] if m["id"] == metrica_id
+    )
     esperado = {-1: abaixo, 0: igual, 1: acima}[posicao]
 
-    assert ms.situacao_medida(metrica, limiar + posicao * passo) == esperado
+    assert classificacao.situacao_medida(metrica, limiar + posicao * passo) == esperado
 
 
 def test_leitor_observa_relatorio_completo_durante_atualizacao(tmp_path, monkeypatch) -> None:
@@ -57,7 +57,7 @@ def test_leitor_observa_relatorio_completo_durante_atualizacao(tmp_path, monkeyp
         dump_original(conteudo, arquivo, **kwargs)
 
     monkeypatch.setattr(json, "dump", escrever_com_leitura)
-    ms.gravar_saude(destino, novo)
+    resultados.gravar_saude(destino, novo)
 
     assert observados == [anterior]
     assert json.loads(destino.read_text(encoding="utf-8")) == novo
@@ -76,7 +76,7 @@ def test_falha_no_meio_da_escrita_preserva_relatorio(tmp_path, monkeypatch) -> N
 
     monkeypatch.setattr(json, "dump", falhar)
     with pytest.raises(OSError, match="Disco cheio"):
-        ms.gravar_saude(destino, {"resumo": {"criticos": []}})
+        resultados.gravar_saude(destino, {"resumo": {"criticos": []}})
 
     assert destino.read_text(encoding="utf-8") == anterior
     assert list(tmp_path.iterdir()) == [destino]
@@ -92,7 +92,7 @@ def test_falha_na_substituicao_preserva_relatorio(tmp_path, monkeypatch) -> None
 
     monkeypatch.setattr(arquivos.os, "replace", falhar)
     with pytest.raises(OSError, match="Falha ao substituir"):
-        ms.gravar_saude(destino, {"resumo": {"criticos": [{"id": "modelo.roc_auc"}]}})
+        resultados.gravar_saude(destino, {"resumo": {"criticos": [{"id": "modelo.roc_auc"}]}})
 
     assert destino.read_text(encoding="utf-8") == anterior
     assert list(tmp_path.iterdir()) == [destino]

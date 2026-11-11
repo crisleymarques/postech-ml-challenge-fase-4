@@ -95,7 +95,7 @@ flowchart TD
 | `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
 | `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
 | `observabilidade/logs/` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
-| `metricas_saude.py` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
+| `observabilidade/metricas_saude/` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
 | `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -341,7 +341,7 @@ O catálogo de métricas de saúde operacional está definido em
 `categoria`, `nome`, `semantica`, `unidade`, `escopo` (`execucao` ou
 `agregado`), `etapas` (nulo quando aplicável a todas), `coleta`, `criterio`,
 `direcao` (`maior_pior` ou `menor_pior`) e os limiares `limiar_degracao` e
-`limiar_falha`. O componente `metricas_saude.py` coleta os valores dos
+`limiar_falha`. O componente `observabilidade/metricas_saude/` coleta os valores dos
 artefatos persistidos, marca a disponibilidade e classifica cada medida em
 `ok`, `atencao`, `critico`, `indisponivel` ou `nao_aplicavel`. A sinalização e
 o alerta efetivos ficam na integração do F3-03; esta etapa apenas coleta e

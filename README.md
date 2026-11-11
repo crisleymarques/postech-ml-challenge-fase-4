@@ -874,7 +874,7 @@ métrica declara `id`, `categoria`, `nome`, `semantica`, `unidade`, `escopo`
 `limiar_degracao` e `limiar_falha`. São 15 métricas em 5 categorias: pipeline,
 qualidade, drift, modelo e infraestrutura local.
 
-O componente [src/monitoramento/metricas_saude.py](src/monitoramento/metricas_saude.py)
+O componente [src/monitoramento/observabilidade/metricas_saude/](src/monitoramento/observabilidade/metricas_saude/)
 lê os artefatos persistidos de cada execução — manifesto, `metrics.json`,
 `quality.json`, `drift.json`, `analise.json` e `performance.json` —, coleta os
 valores, marca a disponibilidade e classifica cada medida em `ok`, `atencao`,
@@ -882,7 +882,7 @@ valores, marca a disponibilidade e classifica cada medida em `ok`, `atencao`,
 ficam na integração do F3-03; esta etapa apenas coleta e classifica.
 
 ```powershell
-uv run python src/monitoramento/metricas_saude.py --runs-dir reports/runs --output-dir reports/saude
+uv run python -m monitoramento.observabilidade.metricas_saude --runs-dir reports/runs --output-dir reports/saude
 ```
 
 | Artefato | Local |
@@ -908,7 +908,7 @@ Na execução real sobre as 11 execuções registradas, foram coletadas 48 medid
 `modelo.roc_auc = 0,461174` (`run-f205-avaliacao`) em estado crítico.
 
 ```powershell
-uv run pytest tests/test_metricas_saude.py -q
+uv run pytest tests/observabilidade/metricas_saude/ -q
 ```
 
 ## Convenção de commits
@@ -992,7 +992,7 @@ Concluídos:
   15 métricas em 5 categorias, coleta a partir dos artefatos persistidos,
   classificação por situação com dois níveis de limiar (`atencao`/`critico`),
   medidas em `reports/saude/saude.json` e testes em
-  `tests/test_metricas_saude.py`.
+  `tests/observabilidade/metricas_saude/`.
 
 Pendentes:
 
