@@ -996,8 +996,18 @@ O painel é tolerante a ausências: artefato inexistente aparece como
 `indisponivel` sem impedir as demais abas, e execução sem evento terminal é
 apresentada como incompleta, sem inferir sucesso.
 
+Eventos com JSON inválido ou valores que não sejam objetos são ignorados.
+Falhas de acesso ou de codificação de um arquivo de eventos ficam isoladas à
+execução, sem impedir as demais abas nem confirmar sucesso por leitura parcial.
+Relatórios de alertas ausentes, ilegíveis ou sem resumo e coleção utilizáveis
+aparecem como indisponíveis; seus indicadores exibem `—`. Zero é exibido apenas
+quando confirmado por um relatório válido.
+
+A [revalidação dos critérios da F3-04](docs/VALIDACAO_F3_04.md) registra as
+evidências, a captura já publicada no PR e o acesso local ao painel.
+
 ```powershell
-uv run pytest tests/test_dashboard.py tests/test_alertas_dashboard_regressoes.py -q
+uv run pytest tests/test_dashboard.py tests/test_dashboard_resiliencia.py tests/test_alertas_dashboard_regressoes.py -q
 ```
 
 ## Convenção de commits
@@ -1108,5 +1118,3 @@ Pendentes:
 - Validação funcional integrada do pipeline com dados sintéticos, além dos
   testes isolados de obtenção, de preparação do dataset, de treinamento e de
   validação.
-- Evidências visuais do dashboard (capturas das abas) e registro do acesso,
-  conforme a issue F3-04.
