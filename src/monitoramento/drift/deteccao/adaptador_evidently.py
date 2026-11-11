@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import math
 from typing import Any
 
 import evidently
@@ -34,7 +34,7 @@ def extrair_estatisticas(
         coluna = config.get("column")
         metodo = config.get("method")
         valor = item.get("value")
-        if valor is None:
+        if valor is None or not math.isfinite(float(valor)):
             encontrados[coluna] = {
                 "feature": coluna,
                 "method": metodo,
@@ -79,6 +79,36 @@ def montar_resultados(
     return resultados
 
 
-def salvar_html(snapshot: Any, caminho: Path) -> None:
-    """Grava o HTML do snapshot mantendo o formato do Evidently."""
-    snapshot.save_html(str(caminho))
+def comparar_features(
+    referencia: pd.DataFrame,
+    atual: pd.DataFrame,
+    colunas: list[str],
+    limiar_p: float,
+    limiar_dist: float,
+) -> list[dict[str, Any]]:
+    """Calcula somente colunas avaliaveis e preserva a cobertura completa."""
+    indisponiveis = {}
+    for coluna in colunas:
+        vazias = [
+            papel
+            for papel, base in (("referencia", referencia), ("producao", atual))
+            if base[coluna].dropna().empty
+        ]
+        if vazias:
+            indisponiveis[coluna] = {
+                "feature": coluna,
+                "method": None,
+                "statistic": None,
+                "threshold": None,
+                "drift_detected": None,
+                "reason": f"coluna sem valores observados: {', '.join(vazias)}",
+            }
+    avaliaveis = [coluna for coluna in colunas if coluna not in indisponiveis]
+    encontrados = {}
+    if avaliaveis:
+        snapshot = executar_evidently(referencia[avaliaveis], atual[avaliaveis])
+        encontrados = {
+            item["feature"]: item
+            for item in montar_resultados(snapshot, avaliaveis, limiar_p, limiar_dist)
+        }
+    return [indisponiveis.get(coluna) or encontrados[coluna] for coluna in colunas]

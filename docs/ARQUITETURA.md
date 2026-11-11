@@ -33,6 +33,21 @@ O pacote `drift/deteccao/` separa configuração, entradas, regras, resultados,
 serviço e CLI. A integração com o Evidently fica em `adaptador_evidently.py`;
 a leitura e seleção de features ficam em `drift/dados.py`. As regras de
 decisão não importam o Evidently. O comando é `uv run detectar-drift`.
+O adaptador calcula estatísticas; `relatorio.py` apresenta o documento canônico
+em HTML customizado. JSON, HTML, métricas e alertas compartilham as mesmas
+regras e os mesmos limiares. A detecção exige SHA-256 válido das três entradas
+e cobertura de todas as features declaradas nos metadados. Colunas inteiramente
+nulas recebem resultado indisponível e ficam fora do denominador; nenhuma
+feature avaliável implica falha controlada. `changed_variables.not_evaluated`
+distingue indisponibilidade de ausência de drift.
+
+A reserva do diretório é exclusiva dentro do serviço. A detecção publica o
+manifesto atomicamente e por último, após os eventos finais; falhas publicam
+manifesto terminal `failed`, quando o armazenamento permite. Consumidores só
+reconhecem sucesso quando manifesto e eventos finais correspondem à mesma
+execução e etapa; a ausência de `drift_alert` exigido pelo resumo também
+caracteriza publicação incompleta.
+
 
 A arquitetura é um pipeline local em lote, com Python 3.12, uv, arquivos como
 interface e dashboard Streamlit. As dependências incluem pandas,

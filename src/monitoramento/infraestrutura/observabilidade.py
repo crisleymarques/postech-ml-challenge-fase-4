@@ -50,3 +50,47 @@ def escrever_eventos(caminho: Path, eventos: list[dict[str, Any]]) -> None:
     with caminho.open("w", encoding="utf-8") as arquivo:
         for evento in eventos:
             arquivo.write(json.dumps(evento, ensure_ascii=False) + "\n")
+
+
+def status_publicado(manifesto: dict[str, Any], eventos: list[dict[str, Any]]) -> str:
+    """Sucesso exige publicacao terminal e eventos coerentes com a execucao.
+
+    Eventos de falha sem manifesto continuam disponiveis para diagnostico.
+    Um completed isolado nao confirma a publicacao dos artefatos.
+    """
+    terminais = {
+        "completed": "success",
+        "rejected": "rejected",
+        "failed": "failed",
+        "skipped": "skipped",
+    }
+    terminal = next(
+        (e for e in reversed(eventos) if isinstance(e, dict) and e.get("event") in terminais),
+        {},
+    )
+    declarado = manifesto.get("status")
+    observado = terminais.get(terminal.get("event"), "incomplete")
+    if declarado != "success" and observado != "success":
+        return declarado if declarado in terminais.values() else observado
+    if (
+        declarado != "success"
+        or str(manifesto.get("contract_version", "")).split(".")[0] != "1"
+        or not manifesto.get("run_id")
+        or not manifesto.get("stage")
+        or observado != "success"
+        or any(terminal.get(k) != manifesto[k] for k in ("run_id", "stage"))
+    ):
+        return "incomplete"
+    drift = manifesto.get("drift")
+    if (
+        isinstance(drift, dict)
+        and drift.get("dataset_drift")
+        and not any(
+            isinstance(e, dict)
+            and e.get("event") == "drift_alert"
+            and all(e.get(k) == manifesto[k] for k in ("run_id", "stage"))
+            for e in eventos
+        )
+    ):
+        return "incomplete"
+    return "success"

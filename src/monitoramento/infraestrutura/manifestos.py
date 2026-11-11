@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -39,12 +40,18 @@ def artefato(
     raise erro(f"Artefato '{tipo}' ausente no manifesto {manifesto.get('run_id')}.")
 
 
-def verificar_artefato(item: dict[str, Any], *, erro: type[Exception]) -> Path:
+def verificar_artefato(
+    item: dict[str, Any], *, erro: type[Exception], hash_obrigatorio: bool = False
+) -> Path:
     """Confere existencia e integridade de um artefato antes de consumi-lo."""
     caminho = Path(item.get("path", ""))
     if not caminho.is_file():
         raise erro(f"Artefato nao encontrado: {caminho}")
     esperado = item.get("sha256")
+    if hash_obrigatorio:
+        if not isinstance(esperado, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", esperado):
+            raise erro(f"SHA-256 ausente ou invalido para o artefato: {caminho}")
+        esperado = esperado.lower()
     if esperado and sha256_arquivo(caminho) != esperado:
         raise erro(f"Hash divergente para o artefato: {caminho}")
     return caminho
