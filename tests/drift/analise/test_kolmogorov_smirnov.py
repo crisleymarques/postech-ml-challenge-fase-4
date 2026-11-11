@@ -1,4 +1,5 @@
 """Testes de kolmogorov_smirnov da analise estatistica."""
+
 from __future__ import annotations
 
 import numpy as np

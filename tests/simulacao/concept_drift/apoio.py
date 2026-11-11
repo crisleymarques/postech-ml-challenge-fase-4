@@ -1,4 +1,5 @@
 """Dados e builders dos testes de Concept Drift."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ import pandas as pd
 SEMENTE = 42
 
 QUANTIDADE = 100
+
 
 def montar_config() -> dict:
     """Contrato minimo do cenario de Concept Drift."""
@@ -40,6 +42,7 @@ def montar_config() -> dict:
         "outputs": {"analysis_dir": "data/analysis"},
     }
 
+
 def gerar_base(quantidade: int = QUANTIDADE) -> pd.DataFrame:
     """Cria uma base sintetica com rotulos alternados e dti crescente."""
     return pd.DataFrame(
@@ -50,6 +53,7 @@ def gerar_base(quantidade: int = QUANTIDADE) -> pd.DataFrame:
             "loan_status": [str(indice % 2) for indice in range(quantidade)],
         }
     )
+
 
 def escrever_config(tmp_path: Path, config: dict) -> Path:
     caminho = tmp_path / "simulacao_concept.json"

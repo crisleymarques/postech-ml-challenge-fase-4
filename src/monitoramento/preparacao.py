@@ -409,12 +409,14 @@ def processar(config_path: Path, config: dict[str, Any], run_id: str, output_dir
             cotas,
         )
 
-        entradas = [{
-            "artifact_type": config["source"].get("artifact_type", "origem"),
-            "path": origem.as_posix(),
-            "sha256": sha256_arquivo(origem),
-            "producer_run_id": None,
-        }]
+        entradas = [
+            {
+                "artifact_type": config["source"].get("artifact_type", "origem"),
+                "path": origem.as_posix(),
+                "sha256": sha256_arquivo(origem),
+                "producer_run_id": None,
+            }
+        ]
         saidas = escrever_particoes(particoes, config, preparation_id, run_id)
     except RejeicaoDados as erro:
         registrar_evento(eventos, run_id, dataset_id, "rejected", "ERROR", "REJEICAO_DADOS")

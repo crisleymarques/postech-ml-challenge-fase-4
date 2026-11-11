@@ -1,4 +1,5 @@
 """Regressoes de cobertura das features esperadas na analise."""
+
 import json
 from pathlib import Path
 

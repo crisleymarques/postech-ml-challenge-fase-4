@@ -1,4 +1,5 @@
 """Testes de config de Concept Drift."""
+
 from __future__ import annotations
 
 from pathlib import Path

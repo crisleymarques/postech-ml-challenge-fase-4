@@ -26,9 +26,7 @@ import pandas as pd
 
 DATASET_KAGGLE = "wordsforthewise/lending-club"
 ARQUIVO_KAGGLE = "accepted_2007_to_2018Q4.csv.gz"
-ORIGEM_PADRAO = Path(
-    "data/reference/raw/accepted_2007_to_2018Q4.csv"
-)
+ORIGEM_PADRAO = Path("data/reference/raw/accepted_2007_to_2018Q4.csv")
 
 ALVO = "loan_status"
 DESFECHOS_DEFINITIVOS = ("Fully Paid", "Charged Off")
@@ -75,6 +73,7 @@ def colunas_disponiveis(origem: Path) -> list[str]:
         raise ValueError(f"Colunas ausentes na origem: {ausentes}")
     return COLUNAS
 
+
 def garantir_origem(origem: Path) -> None:
     """Reutiliza a origem local ou baixa o arquivo padrão do Kaggle."""
     if origem.is_file():
@@ -109,9 +108,7 @@ def garantir_origem(origem: Path) -> None:
             )
 
             if not compactado.is_file():
-                raise FileNotFoundError(
-                    "O download não retornou o arquivo esperado."
-                )
+                raise FileNotFoundError("O download não retornou o arquivo esperado.")
 
             csv_temporario = temporario / origem.name
 
@@ -133,6 +130,7 @@ def garantir_origem(origem: Path) -> None:
         ) from erro
 
     print(f"Origem preparada: {origem}")
+
 
 def coletar_definitivos(
     origem: Path,
@@ -177,19 +175,14 @@ def coletar_definitivos(
 
         if sum(len(item) for item in lotes) > capacidade:
             combinado = pd.concat(lotes, ignore_index=True)
-            lotes = [
-                combinado
-                .nsmallest(capacidade, "_prioridade")
-                .reset_index(drop=True)
-            ]
+            lotes = [combinado.nsmallest(capacidade, "_prioridade").reset_index(drop=True)]
 
     if not lotes:
         return pd.DataFrame(columns=colunas), total_lidas, total_definitivos
     return (
-        pd.concat(lotes, ignore_index=True)
-        .drop(columns="_prioridade"),
+        pd.concat(lotes, ignore_index=True).drop(columns="_prioridade"),
         total_lidas,
-        total_definitivos
+        total_definitivos,
     )
 
 
@@ -211,23 +204,14 @@ def amostra_estratificada(base: pd.DataFrame, n_linhas: int, seed: int) -> pd.Da
     quantidades = np.floor(cotas).astype(int)
 
     faltantes = n_linhas - int(quantidades.sum())
-    prioridades = (cotas - quantidades).sort_values(
-        ascending=False,
-        kind="stable"
-    )
+    prioridades = (cotas - quantidades).sort_values(ascending=False, kind="stable")
     quantidades.loc[prioridades.index[:faltantes]] += 1
 
     partes = []
     for rotulo, quantidade in quantidades.items():
         grupo = base[base[ALVO] == rotulo]
-        partes.append(
-            grupo.sample(n=int(quantidade), random_state=seed)
-        )
-    return (
-        pd.concat(partes)
-        .sample(frac=1, random_state=seed)
-        .reset_index(drop=True)
-    )
+        partes.append(grupo.sample(n=int(quantidade), random_state=seed))
+    return pd.concat(partes).sample(frac=1, random_state=seed).reset_index(drop=True)
 
 
 def main() -> None:

@@ -1,4 +1,5 @@
 """K-S disponivel e colunas nao avaliaveis na publicacao completa."""
+
 import json
 from pathlib import Path
 

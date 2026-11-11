@@ -1,4 +1,5 @@
 """Testes de interpretacao da analise estatistica."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -116,8 +117,15 @@ def test_montar_conclusoes_registra_confirmadas_e_ressalva() -> None:
 def test_ks_independe_de_psi_com_referencia_constante() -> None:
     for valor_atual, drift in [(0, False), (1, True)]:
         resultado = interpretacao.analisar_variavel(
-            "delinq_2yrs", "numeric", pd.Series([0] * 400), pd.Series([valor_atual] * 400),
-            bins=10, psi_moderado=0.1, psi_limiar=0.25, ks_p=0.05, ks_limiar=0.1,
+            "delinq_2yrs",
+            "numeric",
+            pd.Series([0] * 400),
+            pd.Series([valor_atual] * 400),
+            bins=10,
+            psi_moderado=0.1,
+            psi_limiar=0.25,
+            ks_p=0.05,
+            ks_limiar=0.1,
         )
         assert resultado["psi"] is None
         assert resultado["psi_band"] is None

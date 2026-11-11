@@ -1,4 +1,5 @@
 """Testes de publicacao de Concept Drift."""
+
 from __future__ import annotations
 
 import json
