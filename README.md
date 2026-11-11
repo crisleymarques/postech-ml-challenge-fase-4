@@ -935,6 +935,20 @@ Cada alerta é identificável (`id`, `severidade`, `categoria`, `origem`, `fonte
 `valor`, `situacao`, `error_code` e `evidencia`) e contabilizável. O artefato
 reúne ainda um bloco consolidado de drift (presença, variáveis com drift,
 proporção e total de alertas) e um resumo por severidade, categoria e origem.
+O bloco `drift.por_execucao` preserva os resultados de cada execução. Os campos
+de destaque (`dataset_drift`, `variaveis_com_drift` e `proporcao_drift`) pertencem
+à mesma `execucao_resumo`: a de maior proporção, com desempate por quantidade
+e `run_id`. Esse destaque é histórico, não o resultado mais recente; a análise
+estatística não fornece `dataset_drift`, que permanece nulo nesse caso. O total
+de alertas continua agregado sobre todas as execuções.
+
+A configuração exige as situações `atencao` e `critico`, mapeadas para as
+severidades suportadas (`warning` e `critical`). Antes da publicação, o componente
+valida a versão principal e a estrutura dos contratos de saúde e logs, incluindo
+as medidas e os eventos consumidos. Arquivos vazios (`{}`), coleções malformadas
+e versões incompatíveis encerram com código `1`, sem criar ou sobrescrever
+`alertas.json`. Coleções legitimamente vazias em contratos válidos são aceitas.
+
 O componente apenas integra e sinaliza: não relê os artefatos brutos, não altera
 as etapas anteriores e não converte alerta em erro — encerra com código `0`
 (sucesso) ou `1` (erro técnico). Os artefatos ficam em `reports/alertas/`,
@@ -945,7 +959,7 @@ Na execução real sobre os relatórios consolidados, foram integrados 14 alerta
 13 variáveis com drift, proporção 0,590909 e 3 alertas de drift.
 
 ```powershell
-uv run pytest tests/test_alertas.py -q
+uv run pytest tests/test_alertas.py tests/test_alertas_regressoes.py -q
 ```
 
 ## Dashboard de monitoramento — F3-04
