@@ -15,6 +15,7 @@ conforme o grupo define escopo e implementação.
 |---|---|
 | [Arquitetura e contratos](docs/ARQUITETURA.md) | Fluxo implementado e interfaces planejadas |
 | [Dataset — PREP-02](docs/DATASET.md) | Origem, download, amostragem, análise e limitações dos dados |
+| [Proteção de dados e LGPD — F4-01](docs/LGPD.md) | PII, base legal da decisão de crédito, retenção e Privacy by Design/Default |
 
 ## Ambiente de desenvolvimento
 
@@ -632,6 +633,11 @@ incluindo 10 verificações da consistência entre manifesto e eventos. O HTML
 teve sua tabela e as decisões conferidas por parser nas regressões; a
 inspeção visual no navegador não foi concluída porque o ambiente bloqueou
 URLs de arquivos locais.
+Na integração até F4-01, a suíte completa passou com **460 testes**, incluindo
+as regressões de publicação nos consumidores. Logs, saúde e dashboard
+reconheceram as cinco execuções reais completas e os dois alertas da detecção;
+publicações parciais não confirmam sucesso nem alimentam alertas de drift.
+
 
 Na execução real sobre o cenário `data-drift` / lote `batch-f201`, 13 de 22
 variáveis foram classificadas com drift (proporção de 0,5909, acima do critério
@@ -1071,6 +1077,11 @@ Concluídos:
   na barra lateral, tratamento de artefatos ausentes como `indisponivel` e de
   execuções sem evento terminal como incompletas, e testes das funções de carga
   e agregação em `tests/test_dashboard.py`.
+- Governança de dados e conformidade com a LGPD (F4-01), com inventário e
+  classificação dos dados pessoais, base legal da decisão de crédito (Art. 7º,
+  X e IX; Art. 20), medidas de tratamento e proteção de PII, plano de retenção e
+  descarte e princípios de Privacy by Design e by Default em
+  [docs/LGPD.md](docs/LGPD.md).
 
 Pendentes:
 
