@@ -1,7 +1,10 @@
 """Publicacao e representacoes dos resultados da predicao."""
+
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import pandas as pd
@@ -12,9 +15,15 @@ from .config import CONTRACT_VERSION, STAGE
 
 
 def escrever_predicoes(caminho: Path, base: pd.DataFrame) -> None:
-    """Grava as predicoes em CSV."""
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    base.to_csv(caminho, index=False, encoding="utf-8")
+    """Reserva destino novo e publica o CSV completo sem sobrescrever resultados."""
+    caminho.parent.mkdir(parents=True, exist_ok=False)
+    with NamedTemporaryFile(dir=caminho.parent, suffix=".tmp", delete=False) as arquivo:
+        temporario = Path(arquivo.name)
+    try:
+        base.to_csv(temporario, index=False, encoding="utf-8")
+        os.replace(temporario, caminho)
+    finally:
+        temporario.unlink(missing_ok=True)
 
 
 def descritor_artefato(tipo: str, caminho: Path, run_id: str, base: pd.DataFrame) -> dict[str, Any]:
@@ -77,13 +86,16 @@ def montar_manifesto(
     saidas: list[dict[str, Any]],
     score: dict[str, Any],
     linhas: int,
+    status: str = "success",
+    error_code: str | None = None,
+    validacao_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Reune o manifesto comum do produtor das predicoes."""
     return {
         "contract_version": CONTRACT_VERSION,
         "run_id": run_id,
         "stage": STAGE,
-        "status": "success",
+        "status": status,
         "started_at": iniciado,
         "finished_at": finalizado,
         "config_path": config_path.as_posix(),
@@ -97,5 +109,19 @@ def montar_manifesto(
         "batch_id": batch_id,
         "row_count": int(linhas),
         "score": score,
-        "error_code": None,
+        "error_code": error_code,
+        "quality_validation_run_id": validacao_run_id,
     }
+
+
+def publicar_manifesto(caminho: Path, manifesto: dict[str, Any]) -> None:
+    """Publica o manifesto completo atomicamente, apos os demais artefatos."""
+    from monitoramento.infraestrutura.arquivos import escrever_json
+
+    with NamedTemporaryFile(dir=caminho.parent, suffix=".tmp", delete=False) as arquivo:
+        temporario = Path(arquivo.name)
+    try:
+        escrever_json(temporario, manifesto)
+        os.replace(temporario, caminho)
+    finally:
+        temporario.unlink(missing_ok=True)

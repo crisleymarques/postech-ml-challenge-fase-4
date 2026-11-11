@@ -1,4 +1,5 @@
 """Testes migrados da etapa de predicao."""
+
 from __future__ import annotations
 
 import json
