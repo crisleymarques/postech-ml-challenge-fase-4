@@ -6,8 +6,10 @@ import json
 
 import pytest
 
-from monitoramento import alertas, dashboard, metricas_saude
-from tests.test_saude_alertas_regressoes import RAIZ, gerar_fontes
+from monitoramento.observabilidade import alertas, dashboard
+from monitoramento.observabilidade.dashboard.indicadores import medidas_de_saude
+from monitoramento.observabilidade.metricas_saude.resultados import gravar_saude
+from tests.observabilidade.integracao.test_saude_alertas_regressoes import RAIZ, gerar_fontes
 
 
 @pytest.mark.parametrize(
@@ -29,9 +31,7 @@ def test_dashboard_preserva_classificacao_dos_limites(tmp_path, auc, situacao, s
         tmp_path / "alertas/alertas.json",
     )
 
-    medida = next(
-        m for m in dashboard.medidas_de_saude(painel["saude"]) if m["id"] == "modelo.roc_auc"
-    )
+    medida = next(m for m in medidas_de_saude(painel["saude"]) if m["id"] == "modelo.roc_auc")
     assert medida["situacao"] == situacao
     assert medida["valor"] == auc
     por_auc = [a for a in painel["alertas"]["alertas"] if a.get("metrica") == "modelo.roc_auc"]
@@ -59,6 +59,6 @@ def test_dashboard_mantem_saude_disponivel_durante_escrita(tmp_path, monkeypatch
         dump_original(conteudo, arquivo, **kwargs)
 
     monkeypatch.setattr(json, "dump", escrever_com_leitura)
-    metricas_saude.gravar_saude(destino, anterior)
+    gravar_saude(destino, anterior)
 
     assert observados == [anterior]

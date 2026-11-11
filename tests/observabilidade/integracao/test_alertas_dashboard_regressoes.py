@@ -2,20 +2,20 @@
 
 from streamlit.testing.v1 import AppTest
 
-from monitoramento import alertas
-from tests.test_alertas_regressoes import execucao
+from monitoramento.observabilidade.alertas.drift import consolidar_drift
+from tests.observabilidade.alertas.test_alertas_regressoes import execucao
 
 
 def pagina_drift() -> None:
     import streamlit as st
 
-    from monitoramento.dashboard import render_drift
+    from monitoramento.observabilidade.dashboard.componentes.drift import render_drift
 
     render_drift({"alertas": {"drift": st.session_state["drift"]}})
 
 
 def test_dashboard_exibe_mesma_execucao_no_destaque_e_preserva_controle() -> None:
-    drift = alertas.consolidar_drift(
+    drift = consolidar_drift(
         {
             "execucoes": [
                 execucao("a-drift", True, 13, 0.59),
@@ -41,7 +41,7 @@ def test_dashboard_nao_inventa_dataset_drift_na_analise_estatistica() -> None:
     analise = execucao("analise", None, 2, 1.0)
     analise["stage"] = "analise"
     analise["metricas"] = analise["metricas"][1:]
-    drift = alertas.consolidar_drift(
+    drift = consolidar_drift(
         {
             "execucoes": [
                 execucao("deteccao", True, 13, 0.59),

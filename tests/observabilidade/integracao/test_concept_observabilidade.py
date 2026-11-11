@@ -7,9 +7,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from monitoramento import alertas, dashboard, logs, metricas_saude
 from monitoramento.avaliacao.concept_drift import servico
 from monitoramento.infraestrutura.arquivos import sha256_arquivo
+from monitoramento.observabilidade import alertas, dashboard, logs, metricas_saude
 from tests.avaliacao.concept_drift.apoio import montar_config, preparar_manifestos
 
 

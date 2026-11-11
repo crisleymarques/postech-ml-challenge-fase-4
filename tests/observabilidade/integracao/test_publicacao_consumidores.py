@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from monitoramento import dashboard, logs, metricas_saude
 from monitoramento.drift.deteccao.servico import processar
+from monitoramento.observabilidade import dashboard, logs, metricas_saude
 from tests.drift.deteccao.apoio import montar_config, preparar_manifestos
 
 
@@ -29,7 +29,7 @@ def test_consumidores_concordam_sobre_publicacao_da_deteccao(tmp_path, remover):
     saude = metricas_saude.gerar(
         runs,
         tmp_path / "saude",
-        Path(__file__).resolve().parents[1] / "configs/metricas_saude.json",
+        Path(__file__).resolve().parents[3] / "configs/metricas_saude.json",
     )
     painel = dashboard.carregar_execucoes(runs)
     assert resumo["execucoes"]["por_status"] == {esperado: 1}

@@ -964,14 +964,14 @@ uv run pytest tests/observabilidade/alertas/ tests/observabilidade/integracao/te
 
 ## Dashboard de monitoramento — F3-04
 
-O componente [src/monitoramento/dashboard.py](src/monitoramento/dashboard.py) é o
+O componente [src/monitoramento/observabilidade/dashboard/app.py](src/monitoramento/observabilidade/dashboard/app.py) é o
 painel Streamlit que reúne os resultados persistidos pelas etapas anteriores. Ele
 lê os eventos e manifestos de cada execução em `reports/runs/<run_id>/` e os
 artefatos consolidados — logs operacionais (F3-01), métricas de saúde (F3-02) e
 alertas integrados (F3-03) — sem executar treino nem alterar dados.
 
 ```powershell
-uv run streamlit run src/monitoramento/dashboard.py
+uv run streamlit run src/monitoramento/observabilidade/dashboard/app.py
 ```
 
 Os caminhos das fontes são configuráveis na barra lateral; por padrão:
@@ -998,7 +998,7 @@ aparecem como indisponíveis; seus indicadores exibem `—`. Zero é exibido ape
 quando confirmado por um relatório válido.
 
 ```powershell
-uv run pytest tests/test_dashboard.py tests/test_dashboard_resiliencia.py tests/test_alertas_dashboard_regressoes.py -q
+uv run pytest tests/observabilidade/dashboard/ tests/observabilidade/integracao/test_alertas_dashboard_regressoes.py -q
 ```
 
 ## Convenção de commits
@@ -1091,7 +1091,7 @@ Concluídos:
   (visão geral, saúde operacional, drift, alertas e logs), fontes configuráveis
   na barra lateral, tratamento de artefatos ausentes como `indisponivel` e de
   execuções sem evento terminal como incompletas, e testes das funções de carga
-  e agregação em `tests/test_dashboard.py`.
+  e agregação em `tests/observabilidade/dashboard/`.
 
 Pendentes:
 

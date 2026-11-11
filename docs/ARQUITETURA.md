@@ -97,7 +97,7 @@ flowchart TD
 | `observabilidade/logs/` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
 | `observabilidade/metricas_saude/` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
 | `observabilidade/alertas/` | Integrar logs, métricas de saúde e resultados de drift; sinalizar falhas e degradação | `reports/saude/saude.json`, `reports/logs/resumo.json` e catálogo de alertas | Alertas classificáveis e contáveis, bloco consolidado de drift e resumo (`alertas.json`) |
-| `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
+| `observabilidade/dashboard/` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
 aprende imputação, escalas, codificações ou seleção de variáveis a partir do
@@ -391,7 +391,7 @@ em contratos válidos são aceitas. A integração
 não altera as etapas anteriores e não converte alerta em erro: código `0` no
 sucesso e `1` em falha técnica.
 
-O componente `dashboard.py` é o painel Streamlit que reúne os resultados
+O componente `observabilidade/dashboard/` é o painel Streamlit que reúne os resultados
 persistidos. Ele lê os diretórios de execução (`reports/runs/<run_id>/`,
 manifesto e eventos) e os artefatos consolidados dos F3-01/02/03, com os
 caminhos das fontes configuráveis na barra lateral. A interface organiza a
