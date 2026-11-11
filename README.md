@@ -982,7 +982,7 @@ Os caminhos das fontes são configuráveis na barra lateral; por padrão:
 |---|---|
 | Visão geral | Execuções, taxa de sucesso, falhas, rejeições, alertas, saúde dos artefatos e histórico por etapa |
 | Saúde operacional | Medidas de saúde por execução e agregados, filtráveis por categoria (F3-02) |
-| Drift | Bloco consolidado de drift: presença, variáveis com drift, proporção e alertas (F3-03) |
+| Drift | Destaque histórico identificado por execução, resultados individuais e total de alertas (F3-03) |
 | Alertas | Alertas por severidade, categoria e origem, com filtros (F3-03) |
 | Logs e falhas | Contagens de execuções e eventos por categoria, além das falhas registradas (F3-01) |
 
@@ -991,7 +991,7 @@ O painel é tolerante a ausências: artefato inexistente aparece como
 apresentada como incompleta, sem inferir sucesso.
 
 ```powershell
-uv run pytest tests/test_dashboard.py -q
+uv run pytest tests/test_dashboard.py tests/test_alertas_dashboard_regressoes.py -q
 ```
 
 ## Convenção de commits

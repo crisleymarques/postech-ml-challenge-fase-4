@@ -368,6 +368,12 @@ def render_drift(painel: dict[str, Any]) -> None:
         return
 
     drift = alertas["drift"]
+    destaque = drift.get("execucao_resumo")
+    if destaque:
+        st.caption(
+            f"Destaque histórico: execução {destaque}. Maior proporção de variáveis com drift, "
+            "com desempate por quantidade e execução. Alertas: total histórico."
+        )
     colunas = st.columns(4)
     presente = drift.get("dataset_drift")
     colunas[0].metric("Data drift", "—" if presente is None else ("sim" if presente else "não"))
@@ -377,6 +383,23 @@ def render_drift(painel: dict[str, Any]) -> None:
     colunas[2].metric("Proporção", "—" if proporcao is None else f"{proporcao:.3f}")
     alertas_total = drift.get("alertas_total")
     colunas[3].metric("Alertas de drift", "—" if alertas_total is None else int(alertas_total))
+
+    por_execucao = drift.get("por_execucao") or []
+    if por_execucao:
+        st.subheader("Drift por execução")
+        st.dataframe(
+            _tabela(por_execucao).rename(
+                columns={
+                    "run_id": "Execução",
+                    "stage": "Etapa",
+                    "dataset_drift": "Drift no conjunto",
+                    "variaveis_com_drift": "Variáveis com drift",
+                    "proporcao_drift": "Proporção",
+                }
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     execucoes = drift.get("execucoes") or []
     if execucoes:
