@@ -227,6 +227,7 @@ __marimo__/
 /reports/runs/*
 /reports/logs/*
 /reports/saude/*
+/reports/alertas/*
 
 /models/*
 !/models/.gitkeep

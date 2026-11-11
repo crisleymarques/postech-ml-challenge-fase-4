@@ -96,6 +96,7 @@ flowchart TD
 | `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
 | `observabilidade/logs/` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
 | `observabilidade/metricas_saude/` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
+| `alertas.py` | Integrar logs, métricas de saúde e resultados de drift; sinalizar falhas e degradação | `reports/saude/saude.json`, `reports/logs/resumo.json` e catálogo de alertas | Alertas classificáveis e contáveis, bloco consolidado de drift e resumo (`alertas.json`) |
 | `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -368,6 +369,19 @@ Em métricas `menor_pior`, a situação muda apenas abaixo do limiar; em
 sem expor JSON parcial aos consumidores nem perder a versão anterior caso a
 atualização falhe.
 
+O componente `alertas.py` integra logs, métricas de saúde e resultados de drift
+em um único artefato. Ele lê os relatórios já consolidados
+(`reports/saude/saude.json` e `reports/logs/resumo.json`) e aplica os critérios
+declarados em `configs/alertas.json`: medida com situação `atencao` gera alerta
+`warning`; medida com situação `critico` gera alerta `critical`; falha de
+execução ou de contrato registrada nos logs gera alerta `critical`; evento
+`drift_alert` gera alerta `warning`. Cada alerta é identificável (com origem,
+severidade, categoria, valor e evidência) e contabilizável; o artefato reúne
+ainda um bloco consolidado de drift (presença, variáveis com drift, proporção e
+total de alertas) e um resumo por severidade, categoria e origem. A consolidação
+não altera as etapas anteriores e não converte alerta em erro: código `0` no
+sucesso e `1` em falha técnica.
+
 O dashboard lê os diretórios de execução, consolida eventos por ID e oferece
 filtros por etapa, cenário e lote. Exibe origem e horário da última atualização,
 estado vazio quando não houver execuções e aviso para resultados incompletos.
@@ -387,10 +401,10 @@ Preparação, validação e treinamento já geram seus diretórios e artefatos.
 Simulação, predição, detecção e dashboard ainda são planejados. Dados ficam em
 `data/reference/` e `data/analysis/`, e modelos em `models/`, conforme as
 exclusões atuais.
-`reports/runs/`, `reports/logs/` e `reports/saude/` são ignorados pelo Git:
-logs, configurações, métricas de saúde e relatórios gerados não são publicados
-automaticamente. A equipe deve revisar seu conteúdo e definir retenção e
-eventual exclusão antes de produzi-los ou compartilhá-los.
+`reports/runs/`, `reports/logs/`, `reports/saude/` e `reports/alertas/` são
+ignorados pelo Git: logs, configurações, métricas de saúde, alertas e relatórios
+gerados não são publicados automaticamente. A equipe deve revisar seu conteúdo e
+definir retenção e eventual exclusão antes de produzi-los ou compartilhá-los.
 
 Nenhuma etapa implementada usa bancos de dados. Automação, API de serving,
 nuvem e retreinamento automático exigem decisão posterior de escopo.

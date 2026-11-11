@@ -1,0 +1,19 @@
+{
+  "contract_version": "1.0",
+  "descricao": "Criterios de sinalizacao de falhas e degradacao a partir dos artefatos consolidados de logs operacionais (F3-01) e metricas de saude (F3-02) (issue F3-03).",
+  "severidades": [
+    "warning",
+    "critical"
+  ],
+  "severidade_por_situacao": {
+    "atencao": "warning",
+    "critico": "critical"
+  },
+  "severidade_falha": "critical",
+  "severidade_alerta_drift": "warning",
+  "escopos": [
+    "execucao",
+    "agregado",
+    "log"
+  ]
+}
