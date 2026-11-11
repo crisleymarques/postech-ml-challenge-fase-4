@@ -892,7 +892,12 @@ uv run python src/monitoramento/metricas_saude.py --runs-dir reports/runs --outp
 Os limiares operacionais definidos são: duração 60 s (atenção) e 300 s
 (crítico); taxa de sucesso 0,9 (atenção) e 0,5 (crítico); proporção de variáveis
 com drift 0,1 (atenção) e 0,5 (crítico); `roc_auc` 0,6 (atenção) e 0,5
-(crítico); espaço livre 1 GiB (atenção) e 256 MiB (crítico). Alerta de drift e
+(crítico); espaço livre 1 GiB (atenção) e 256 MiB (crítico). Para métricas
+`menor_pior`, os limites são exclusivos: taxa de sucesso 0,9 e ROC AUC 0,6
+ainda são `ok`; ROC AUC 0,5 é `atencao`. Volume de ao menos 1 linha é `ok`.
+Para `maior_pior`, o próprio limiar já aciona a situação correspondente.
+O relatório é publicado atomicamente: leitores recebem um JSON completo e
+uma falha na atualização preserva a última versão publicada. Alerta de drift e
 mudança de distribuição não são erro de execução. Os artefatos ficam em
 `reports/saude/`, ignorado pelo Git, e a etapa encerra com código `0` (sucesso)
 ou `1` (erro técnico).

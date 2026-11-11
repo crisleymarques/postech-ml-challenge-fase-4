@@ -356,11 +356,17 @@ classifica.
 | Infraestrutura local | `espaco_livre_bytes`, `escrita_ok` | Espaço em disco e teste de escrita no diretório de saída |
 
 Os limiares operacionais definidos são: duração 60 s (atenção) e 300 s
-(crítico); volume acima de 1 linha; taxa de sucesso 0,9 (atenção) e 0,5
+(crítico); volume de ao menos 1 linha; taxa de sucesso 0,9 (atenção) e 0,5
 (crítico); proporção de variáveis com drift 0,1 (atenção) e 0,5 (crítico);
 `roc_auc` 0,6 (atenção) e 0,5 (crítico); espaço livre 1 GiB (atenção) e 256 MiB
 (crítico). Métricas sem direção (como `alertas_total`) são informativas.
 Alerta de drift e mudança de distribuição não são erro de execução.
+
+Em métricas `menor_pior`, a situação muda apenas abaixo do limiar; em
+`maior_pior`, muda a partir do limiar, incluindo a igualdade. A publicação de
+`saude.json` usa arquivo temporário no mesmo diretório e substituição atômica,
+sem expor JSON parcial aos consumidores nem perder a versão anterior caso a
+atualização falhe.
 
 O dashboard lê os diretórios de execução, consolida eventos por ID e oferece
 filtros por etapa, cenário e lote. Exibe origem e horário da última atualização,
