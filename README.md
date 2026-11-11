@@ -664,6 +664,10 @@ uv run analisar-drift ^
 | Resultado por variável e interpretação | `reports/runs/<run_id>/analise.json` |
 | Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
 
+Todas as features dos metadados devem existir na referência e no lote.
+Uma coluna ausente bloqueia a análise, identifica a entrada incompatível e
+não produz um relatório parcial nem uma confirmação estatística fictícia.
+
 PSI e K-S são avaliados independentemente. Quando os quantis da referência
 não permitem calcular PSI, o K-S continua válido para a decisão. Apenas a
 indisponibilidade de todos os testes deixa `drift_detected` nulo; nesse caso,

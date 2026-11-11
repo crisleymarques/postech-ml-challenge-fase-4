@@ -5,6 +5,8 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
+import pandas as pd
+
 from monitoramento.infraestrutura import manifestos
 
 from .config import CONTRACT_VERSION, ErroAnalise
@@ -49,3 +51,13 @@ def verificar_compatibilidade(
                 f"dataset_id divergente no manifesto {manifesto.get('run_id')}: "
                 f"{manifesto.get('dataset_id')} != {dataset_id}"
             )
+
+
+def validar_features_esperadas(
+    referencia: pd.DataFrame, atual: pd.DataFrame, colunas: list[str]
+) -> None:
+    """Exige cobertura integral das features do modelo nas duas entradas."""
+    for papel, base in (("referencia", referencia), ("lote", atual)):
+        ausentes = [coluna for coluna in colunas if coluna not in base.columns]
+        if ausentes:
+            raise ErroAnalise(f"Features ausentes na entrada {papel}: {ausentes}")

@@ -7,13 +7,19 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from monitoramento.drift.dados import ler_features, selecionar_features
+from monitoramento.drift.dados import ler_features
 from monitoramento.infraestrutura import observabilidade
 from monitoramento.infraestrutura.arquivos import escrever_json
 from monitoramento.infraestrutura.observabilidade import agora_iso, escrever_eventos
 
 from .config import CODIGO_ERRO, CODIGO_SUCESSO, STAGE, ErroAnalise
-from .entradas import artefato, separar_manifestos, verificar_artefato, verificar_compatibilidade
+from .entradas import (
+    artefato,
+    separar_manifestos,
+    validar_features_esperadas,
+    verificar_artefato,
+    verificar_compatibilidade,
+)
 from .interpretacao import montar_resultados, resumir
 from .resultados import descritor_artefato, montar_documento, montar_manifesto, montar_medidas
 
@@ -71,15 +77,13 @@ def processar(
         referencia = ler_features(caminho_ref, numericas, categoricas)
         atual = ler_features(caminho_lote, numericas, categoricas)
 
-        avaliadas = selecionar_features(referencia, atual, colunas)
-        if not avaliadas:
-            raise ErroAnalise("Nenhuma feature em comum entre a referencia e o lote.")
+        validar_features_esperadas(referencia, atual, colunas)
 
         metodo = config["method"]
         resultados = montar_resultados(
             referencia,
             atual,
-            avaliadas,
+            colunas,
             numericas,
             bins=int(metodo["bins"]),
             psi_moderado=float(metodo["psi_moderate"]),
