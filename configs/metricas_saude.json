@@ -1,0 +1,237 @@
+{
+  "contract_version": "1.0",
+  "descricao": "Catalogo de metricas de saude operacional do pipeline (issue F3-02).",
+  "categorias": [
+    "pipeline",
+    "qualidade",
+    "drift",
+    "modelo",
+    "infraestrutura"
+  ],
+  "metricas": [
+    {
+      "id": "pipeline.status_execucao",
+      "categoria": "pipeline",
+      "nome": "Status da execucao",
+      "semantica": "Desfecho da execucao registrado no manifesto da etapa.",
+      "unidade": "categoria",
+      "escopo": "execucao",
+      "etapas": null,
+      "coleta": "manifest.json: campo 'status'",
+      "criterio": "'success' resulta em ok; 'rejected' em atencao (bloqueio previsto pelo contrato); 'failed' e 'incomplete' em critico.",
+      "direcao": null,
+      "limiar_degracao": null,
+      "limiar_falha": null
+    },
+    {
+      "id": "pipeline.duracao_s",
+      "categoria": "pipeline",
+      "nome": "Duracao da execucao",
+      "semantica": "Tempo decorrido entre o inicio e o fim da execucao (latencia).",
+      "unidade": "segundos",
+      "escopo": "execucao",
+      "etapas": null,
+      "coleta": "manifest.json: 'finished_at' menos 'started_at'",
+      "criterio": "Degradacao a partir de 60 s e falha a partir de 300 s.",
+      "direcao": "maior_pior",
+      "limiar_degracao": 60.0,
+      "limiar_falha": 300.0
+    },
+    {
+      "id": "pipeline.volume_linhas",
+      "categoria": "pipeline",
+      "nome": "Volume processado",
+      "semantica": "Total de linhas dos artefatos da execucao (saidas; entradas quando as saidas nao declaram row_count).",
+      "unidade": "linhas",
+      "escopo": "execucao",
+      "etapas": null,
+      "coleta": "manifest.json: soma de 'row_count' em 'outputs' (ou 'inputs')",
+      "criterio": "Degradacao quando nao ha linhas contabilizadas (menor que 1).",
+      "direcao": "menor_pior",
+      "limiar_degracao": 1.0,
+      "limiar_falha": null
+    },
+    {
+      "id": "pipeline.taxa_sucesso",
+      "categoria": "pipeline",
+      "nome": "Taxa de sucesso das execucoes",
+      "semantica": "Proporcao de execucoes concluidas com status 'success'.",
+      "unidade": "proporcao",
+      "escopo": "agregado",
+      "etapas": null,
+      "coleta": "manifestos das execucoes: campo 'status'",
+      "criterio": "Degradacao abaixo de 0.9 e falha abaixo de 0.5.",
+      "direcao": "menor_pior",
+      "limiar_degracao": 0.9,
+      "limiar_falha": 0.5
+    },
+    {
+      "id": "pipeline.falhas_total",
+      "categoria": "pipeline",
+      "nome": "Execucoes com falha",
+      "semantica": "Quantidade de execucoes encerradas com status 'failed' (erro tecnico).",
+      "unidade": "execucoes",
+      "escopo": "agregado",
+      "etapas": null,
+      "coleta": "manifestos das execucoes: campo 'status'",
+      "criterio": "Falha a partir de 1 execucao com status 'failed'.",
+      "direcao": "maior_pior",
+      "limiar_degracao": null,
+      "limiar_falha": 1.0
+    },
+    {
+      "id": "qualidade.violacoes_total",
+      "categoria": "qualidade",
+      "nome": "Violacoes do contrato de qualidade",
+      "semantica": "Total de ocorrencias violadas pelas regras de qualidade no lote.",
+      "unidade": "ocorrencias",
+      "escopo": "execucao",
+      "etapas": [
+        "validacao"
+      ],
+      "coleta": "quality.json: soma de 'count' em 'violations' (ou metrics.json: 'violacoes_total')",
+      "criterio": "Degradacao a partir de 1 ocorrencia; a rejeicao do lote tambem aparece no status da execucao.",
+      "direcao": "maior_pior",
+      "limiar_degracao": 1.0,
+      "limiar_falha": null
+    },
+    {
+      "id": "qualidade.lotes_rejeitados",
+      "categoria": "qualidade",
+      "nome": "Lotes rejeitados",
+      "semantica": "Quantidade de execucoes de validacao cujo lote foi bloqueado.",
+      "unidade": "lotes",
+      "escopo": "agregado",
+      "etapas": null,
+      "coleta": "manifestos das execucoes de validacao: campo 'status'",
+      "criterio": "Degradacao a partir de 1 lote rejeitado, para visibilidade do bloqueio.",
+      "direcao": "maior_pior",
+      "limiar_degracao": 1.0,
+      "limiar_falha": null
+    },
+    {
+      "id": "drift.dataset_drift",
+      "categoria": "drift",
+      "nome": "Drift no conjunto",
+      "semantica": "Indica se a deteccao considerou o lote com drift de dados (mudanca de P(X)).",
+      "unidade": "booleano",
+      "escopo": "execucao",
+      "etapas": [
+        "deteccao"
+      ],
+      "coleta": "drift.json: 'summary.dataset_drift'",
+      "criterio": "Alerta de drift nao e erro de execucao: 'true' resulta em atencao e 'false' em ok.",
+      "direcao": null,
+      "limiar_degracao": null,
+      "limiar_falha": null
+    },
+    {
+      "id": "drift.variaveis_com_drift",
+      "categoria": "drift",
+      "nome": "Variaveis com drift",
+      "semantica": "Quantidade de variaveis cuja distribuicao mudou entre referencia e lote.",
+      "unidade": "variaveis",
+      "escopo": "execucao",
+      "etapas": [
+        "deteccao",
+        "analise"
+      ],
+      "coleta": "drift.json: 'summary.drifted_columns' (ou analise.json: 'summary.changed_columns')",
+      "criterio": "Degradacao a partir de 1 variavel alterada.",
+      "direcao": "maior_pior",
+      "limiar_degracao": 1.0,
+      "limiar_falha": null
+    },
+    {
+      "id": "drift.proporcao_drift",
+      "categoria": "drift",
+      "nome": "Proporcao de variaveis com drift",
+      "semantica": "Fracao das variaveis avaliadas que apresentaram mudanca entre referencia e lote.",
+      "unidade": "proporcao",
+      "escopo": "execucao",
+      "etapas": [
+        "deteccao",
+        "analise"
+      ],
+      "coleta": "drift.json: 'summary.drift_share' (ou analise.json: 'summary.change_share')",
+      "criterio": "Degradacao a partir de 0.1 e falha a partir de 0.5 das variaveis avaliadas.",
+      "direcao": "maior_pior",
+      "limiar_degracao": 0.1,
+      "limiar_falha": 0.5
+    },
+    {
+      "id": "drift.alertas_total",
+      "categoria": "drift",
+      "nome": "Alertas de drift",
+      "semantica": "Quantidade de eventos 'drift_alert' emitidos pelas execucoes.",
+      "unidade": "alertas",
+      "escopo": "agregado",
+      "etapas": null,
+      "coleta": "events.jsonl das execucoes: eventos com 'event' igual a 'drift_alert'",
+      "criterio": "Informativo: o alerta de drift nao e tratado como falha nem como degradacao.",
+      "direcao": null,
+      "limiar_degracao": null,
+      "limiar_falha": null
+    },
+    {
+      "id": "drift.degradacao_conceito",
+      "categoria": "drift",
+      "nome": "Degradacao por Concept Drift",
+      "semantica": "Indica se a comparacao de desempenho entre conceitos acusou queda acima do criterio declarado.",
+      "unidade": "booleano",
+      "escopo": "execucao",
+      "etapas": [
+        "avaliacao"
+      ],
+      "coleta": "performance.json: 'comparison.degradation_detected'",
+      "criterio": "'true' resulta em atencao e 'false' em ok.",
+      "direcao": null,
+      "limiar_degracao": null,
+      "limiar_falha": null
+    },
+    {
+      "id": "modelo.roc_auc",
+      "categoria": "modelo",
+      "nome": "ROC AUC sob o conceito corrente",
+      "semantica": "ROC AUC do modelo avaliado sob o conceito corrente (cenario de Concept Drift).",
+      "unidade": "roc_auc",
+      "escopo": "execucao",
+      "etapas": [
+        "avaliacao"
+      ],
+      "coleta": "performance.json: 'contrast.concept_drift.metrics.roc_auc'",
+      "criterio": "Degradacao abaixo de 0.6 e falha abaixo de 0.5.",
+      "direcao": "menor_pior",
+      "limiar_degracao": 0.6,
+      "limiar_falha": 0.5
+    },
+    {
+      "id": "infra.espaco_livre_bytes",
+      "categoria": "infraestrutura",
+      "nome": "Espaco livre para artefatos",
+      "semantica": "Espaco livre no volume que recebe os artefatos das execucoes.",
+      "unidade": "bytes",
+      "escopo": "agregado",
+      "etapas": null,
+      "coleta": "sistema de arquivos do diretorio de saida (shutil.disk_usage)",
+      "criterio": "Degradacao abaixo de 1 GiB e falha abaixo de 256 MiB.",
+      "direcao": "menor_pior",
+      "limiar_degracao": 1073741824.0,
+      "limiar_falha": 268435456.0
+    },
+    {
+      "id": "infra.escrita_ok",
+      "categoria": "infraestrutura",
+      "nome": "Capacidade de escrita",
+      "semantica": "Indica se o diretorio de saida aceita a gravacao de arquivos.",
+      "unidade": "booleano",
+      "escopo": "agregado",
+      "etapas": null,
+      "coleta": "teste de escrita temporaria no diretorio de saida",
+      "criterio": "Falha de escrita resulta em critico; escrita bem-sucedida em ok.",
+      "direcao": null,
+      "limiar_degracao": null,
+      "limiar_falha": null
+    }
+  ]
+}

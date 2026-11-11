@@ -95,6 +95,7 @@ flowchart TD
 | `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
 | `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
 | `observabilidade/logs/` | Consolidar os eventos de todas as execuções em um log operacional único | `events.jsonl` e manifestos das execuções | Log consolidado (`operacional.jsonl`) e resumo com contagens, falhas e alertas (`resumo.json`) |
+| `metricas_saude.py` | Coletar as métricas de saúde operacional do catálogo a partir dos artefatos persistidos | Manifestos, `metrics.json`, `quality.json`, `drift.json`, `analise.json`, `performance.json` e catálogo | Medidas por execução e agregados com disponibilidade e situação (`saude.json`) |
 | `dashboard.py` | Apresentar execuções e resultados persistidos, inclusive falhas | Manifestos, eventos, métricas agregadas e relatórios | Visualização Streamlit; sem iniciar treino ou alterar os dados |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -335,17 +336,31 @@ Cada `metrics.json` contém `run_id` e lista `measurements`, com objetos
 `name`, `value`, `unit` e `availability`. `value` é número ou nulo;
 `availability` é `available`, `not_available` ou `not_applicable`.
 
-O catálogo abaixo apresenta medidas candidatas de monitoramento. A interface
-e o caminho de exportação estão definidos; a seleção das métricas e de seus
-limiares permanece pendente:
+O catálogo de métricas de saúde operacional está definido em
+`configs/metricas_saude.json` e rege a coleta. Cada métrica declara `id`,
+`categoria`, `nome`, `semantica`, `unidade`, `escopo` (`execucao` ou
+`agregado`), `etapas` (nulo quando aplicável a todas), `coleta`, `criterio`,
+`direcao` (`maior_pior` ou `menor_pior`) e os limiares `limiar_degracao` e
+`limiar_falha`. O componente `metricas_saude.py` coleta os valores dos
+artefatos persistidos, marca a disponibilidade e classifica cada medida em
+`ok`, `atencao`, `critico`, `indisponivel` ou `nao_aplicavel`. A sinalização e
+o alerta efetivos ficam na integração do F3-03; esta etapa apenas coleta e
+classifica.
 
-| Categoria | Medidas candidatas | Apresentação esperada |
+| Categoria | Métricas | Semântica e coleta |
 | --- | --- | --- |
-| Pipeline | Status por etapa, duração e volume processado | Histórico por execução e etapa; distinção de falha, rejeição e sucesso |
-| Qualidade | Lotes rejeitados e violações por regra | Alertas de bloqueio e vínculo ao relatório de qualidade |
-| Drift | Resultados por variável e quantidade de alertas | Referência, cenário, período, método e limiar visíveis |
-| Modelo | Métricas de classificação escolhidas pelo grupo | Valor com modelo, partição, período e cobertura de rótulos |
-| Infraestrutura local | Espaço livre para artefatos e capacidade de persistir saídas | Diagnóstico de indisponibilidade e erros de escrita, sem confundir com drift |
+| Pipeline | `status_execucao`, `duracao_s`, `volume_linhas`, `taxa_sucesso`, `falhas_total` | Do manifesto (`status`, `finished_at` − `started_at`, linhas de saída) e das contagens das execuções e falhas |
+| Qualidade | `violacoes_total`, `lotes_rejeitados` | Violações somadas de `quality.json` e contagem de execuções `rejected` |
+| Drift | `dataset_drift`, `variaveis_com_drift`, `proporcao_drift`, `alertas_total`, `degradacao_conceito` | De `drift.json`/`analise.json` (contagem e proporção de variáveis) e eventos `drift_alert` |
+| Modelo | `roc_auc` | `roc_auc` do modelo no cenário de Concept Drift (`performance.json`) |
+| Infraestrutura local | `espaco_livre_bytes`, `escrita_ok` | Espaço em disco e teste de escrita no diretório de saída |
+
+Os limiares operacionais definidos são: duração 60 s (atenção) e 300 s
+(crítico); volume acima de 1 linha; taxa de sucesso 0,9 (atenção) e 0,5
+(crítico); proporção de variáveis com drift 0,1 (atenção) e 0,5 (crítico);
+`roc_auc` 0,6 (atenção) e 0,5 (crítico); espaço livre 1 GiB (atenção) e 256 MiB
+(crítico). Métricas sem direção (como `alertas_total`) são informativas.
+Alerta de drift e mudança de distribuição não são erro de execução.
 
 O dashboard lê os diretórios de execução, consolida eventos por ID e oferece
 filtros por etapa, cenário e lote. Exibe origem e horário da última atualização,
@@ -366,10 +381,10 @@ Preparação, validação e treinamento já geram seus diretórios e artefatos.
 Simulação, predição, detecção e dashboard ainda são planejados. Dados ficam em
 `data/reference/` e `data/analysis/`, e modelos em `models/`, conforme as
 exclusões atuais.
-`reports/runs/` e `reports/logs/` são ignorados pelo Git: logs, configurações e
-relatórios gerados não são publicados automaticamente. A equipe deve revisar seu
-conteúdo e definir retenção e eventual exclusão antes de produzi-los ou
-compartilhá-los.
+`reports/runs/`, `reports/logs/` e `reports/saude/` são ignorados pelo Git:
+logs, configurações, métricas de saúde e relatórios gerados não são publicados
+automaticamente. A equipe deve revisar seu conteúdo e definir retenção e
+eventual exclusão antes de produzi-los ou compartilhá-los.
 
 Nenhuma etapa implementada usa bancos de dados. Automação, API de serving,
 nuvem e retreinamento automático exigem decisão posterior de escopo.
