@@ -746,6 +746,16 @@ uv run simular-concept-drift ^
   --run-id run-f205-concept
 ```
 
+Antes da avaliação, aprove as features do cenário pelo contrato de produção:
+
+```powershell
+uv run python src/monitoramento/validacao.py ^
+  --config configs/validacao.json ^
+  --profile production ^
+  --input-manifest reports/runs/<run_concept_drift>/manifest.json ^
+  --run-id <run_validacao_concept>
+```
+
 O componente
 [src/monitoramento/avaliacao/concept_drift/](src/monitoramento/avaliacao/concept_drift/)
 aplica o pipeline do treinamento sobre as features (inalteradas) e calcula as
@@ -759,6 +769,7 @@ uv run avaliar-concept-drift ^
   --config configs/avaliacao_concept.json ^
   --input-manifest reports/runs/<run_treinamento>/manifest.json ^
   --input-manifest reports/runs/<run_concept_drift>/manifest.json ^
+  --input-manifest reports/runs/<run_validacao_concept>/manifest.json ^
   --run-id run-f205-avaliacao
 ```
 
@@ -775,6 +786,33 @@ entre Data Drift, Concept Drift e queda de desempenho: mudar a relação P(y|X) 
 implica, por si só, queda — a degradação é uma consequência possível, não a
 definição. A etapa usa `stage: avaliacao` e aceita `--config`,
 `--input-manifest` (repetível), `--run-id` e `--output-dir`.
+
+A avaliação exige aprovação de qualidade vinculada ao mesmo dataset, schema,
+cenário, lote, produtor e hash das features. Modelo e metadados também têm
+identidade, schema e integridade conferidos antes da inferência. Simulação e
+avaliação rejeitam rótulos fora de 0/1, frações, ausências e valores não finitos,
+sem truncamento; os IDs dos rótulos devem corresponder exatamente ao lote.
+
+Diretórios de execução e lotes são reservados exclusivamente, inclusive em
+chamadas Python e processos concorrentes. Reexecuções exigem novos IDs e
+preservam os resultados anteriores. CSVs e JSONs são publicados atomicamente;
+eventos finais precedem o manifesto terminal. Falhas após o início geram
+`failed`, métricas vazias e manifesto sem saídas aprovadas quando a persistência
+estiver disponível. Configuração inválida não inicia uma execução.
+
+Quando a métrica de comparação não puder ser calculada (por exemplo, ROC AUC
+com uma única classe), `metric_delta` e `degradation_detected` são nulos e
+`availability` é `not_available`. A execução termina controladamente, sem
+alerta de degradação e sem interpretar falta de evidência como ausência de queda.
+
+Na revalidação das correções, o fluxo simulação → validação de produção →
+avaliação foi executado duas vezes sobre 10.000 registros e o baseline já
+persistido. Houve 2.032 rótulos alterados; ROC AUC de 0,671789 para 0,449332
+(variação −0,222457), com `drift_alert`. As duas execuções produziram os mesmos
+hashes de features/rótulos e métricas. Os hashes das partições originais e do
+modelo permaneceram inalterados. Colisão de lote e ausência de aprovação foram
+bloqueadas. Esses números usam outra amostra/referência e não substituem a
+execução histórica descrita abaixo.
 
 Na execução real sobre o cenário `concept-drift` / lote `batch-f205`, 4.890
 registros caíram no segmento e 1.916 rótulos foram alterados (taxa de positivos

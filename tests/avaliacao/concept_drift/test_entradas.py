@@ -1,4 +1,5 @@
 """Testes de entradas de Concept Drift."""
+
 from __future__ import annotations
 
 import json
@@ -30,7 +31,12 @@ def test_carregar_manifesto_rejeita_status_nao_sucesso(tmp_path: Path) -> None:
 
 
 def test_separar_manifestos_rejeita_ausente() -> None:
-    manifesto = {"stage": "treinamento", "run_id": "r1"}
+    manifesto = {
+        "stage": "treinamento",
+        "run_id": "r1",
+        "status": "success",
+        "contract_version": "1.0",
+    }
 
     with pytest.raises(configuracao.ErroAvaliacao, match="Manifestos ausentes"):
         entradas.separar_manifestos([manifesto], montar_config())
@@ -38,8 +44,8 @@ def test_separar_manifestos_rejeita_ausente() -> None:
 
 def test_separar_manifestos_rejeita_duplicado() -> None:
     duplicados = [
-        {"stage": "treinamento", "run_id": "r1"},
-        {"stage": "treinamento", "run_id": "r2"},
+        {"stage": "treinamento", "run_id": "r1", "status": "success", "contract_version": "1.0"},
+        {"stage": "treinamento", "run_id": "r2", "status": "success", "contract_version": "1.0"},
         {"stage": "simulacao", "run_id": "r3"},
     ]
 

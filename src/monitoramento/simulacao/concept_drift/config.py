@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ class ErroSimulacao(Exception):
 
 def numero(valor: Any) -> bool:
     """Indica se o valor e um numero utilizavel (exclui booleanos)."""
-    return isinstance(valor, (int, float)) and not isinstance(valor, bool)
+    return isinstance(valor, (int, float)) and not isinstance(valor, bool) and math.isfinite(valor)
 
 
 def carregar_config(caminho: Path) -> dict[str, Any]:
@@ -32,6 +33,9 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
         raise ErroSimulacao(f"Configuracao nao encontrada: {caminho}")
     with caminho.open(encoding="utf-8") as arquivo:
         config = json.load(arquivo)
+
+    if not isinstance(config, dict):
+        raise ValueError("A configuracao deve ser um objeto JSON.")
 
     if versao_maior(config.get("contract_version")) != versao_maior(CONTRACT_VERSION):
         raise ValueError("Versao principal do contrato da configuracao incompativel.")
@@ -49,15 +53,30 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
     if ausentes:
         raise ValueError(f"Chaves ausentes na configuracao: {ausentes}")
 
+    for papel in ("base", "target", "concept", "outputs"):
+        if not isinstance(config[papel], dict):
+            raise ValueError(f"Configuracao invalida para {papel}.")
+    for papel, chave in (("base", "path"), ("outputs", "analysis_dir")):
+        if not isinstance(config[papel].get(chave), str) or not config[papel][chave]:
+            raise ValueError(f"Configuracao invalida para {papel}.")
     alvo = config["target"]
     for chave in ("column", "positive_value", "negative_value"):
         if chave not in alvo:
             raise ValueError(f"O alvo exige a chave '{chave}'.")
 
+    if (
+        type(alvo["positive_value"]) is not int
+        or alvo["positive_value"] != 1
+        or type(alvo["negative_value"]) is not int
+        or alvo["negative_value"] != 0
+    ):
+        raise ValueError("O alvo exige valores inteiros positive_value=1 e negative_value=0.")
     conceito = config["concept"]
     if not conceito.get("rationale"):
         raise ValueError("O cenario de Concept Drift exige 'rationale'.")
     segmento = conceito.get("segment", {})
+    if not isinstance(segmento, dict):
+        raise ValueError("Segmento invalido.")
     if not segmento.get("column"):
         raise ValueError("O segmento exige a chave 'column'.")
     if segmento.get("operator") not in OPERADORES:
@@ -66,6 +85,8 @@ def carregar_config(caminho: Path) -> dict[str, Any]:
         raise ValueError("O segmento exige 'value' numerico.")
 
     perigo = conceito.get("hazard", {})
+    if not isinstance(perigo, dict):
+        raise ValueError("Hazard invalido.")
     for chave in ("reference_value", "slope", "scale"):
         if not numero(perigo.get(chave)):
             raise ValueError(f"O hazard exige '{chave}' numerico.")

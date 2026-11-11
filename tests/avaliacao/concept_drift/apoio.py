@@ -1,4 +1,5 @@
 """Dados e builders dos testes de Concept Drift."""
+
 from __future__ import annotations
 
 import json
@@ -25,6 +26,7 @@ SEMENTE = 42
 
 QUANTIDADE = 24
 
+
 def montar_config() -> dict:
     """Contrato minimo da etapa de avaliacao."""
     return {
@@ -43,14 +45,17 @@ def montar_config() -> dict:
             "labels_artifact": "labels",
             "reference_labels_artifact": "labels_reference",
         },
+        "validation": {"producer_stage": "validacao"},
         "metrics": ["accuracy", "precision", "recall", "f1", "roc_auc"],
         "degradation": {"metric": "roc_auc", "min_delta": 0.02},
     }
+
 
 def montar_metadata() -> dict:
     """Metadados compativeis com as features sinteticas."""
     return {
         "contract_version": "1.0",
+        "schema_version": "1.0",
         "model_id": "modelo-teste",
         "reference_id": "ref-teste",
         "dataset_id": "teste",
@@ -68,11 +73,14 @@ def montar_metadata() -> dict:
         "score_meaning": "probabilidade estimada da classe Charged Off",
     }
 
+
 def _converter_numericas(tabela: object) -> object:
     return pd.DataFrame(tabela).apply(pd.to_numeric, errors="coerce").to_numpy()
 
+
 def _converter_categoricas(tabela: object) -> object:
     return pd.DataFrame(tabela).replace("", np.nan).to_numpy()
+
 
 def criar_pipeline() -> Pipeline:
     """Reproduz a estrutura de pre-processamento do treinamento."""
@@ -109,6 +117,7 @@ def criar_pipeline() -> Pipeline:
         ]
     )
 
+
 def gerar_lote(quantidade: int = QUANTIDADE, inverter: bool = False) -> pd.DataFrame:
     """Cria um lote sintetico cujo rotulo depende de uma regra aprendivel."""
     linhas = []
@@ -129,6 +138,7 @@ def gerar_lote(quantidade: int = QUANTIDADE, inverter: bool = False) -> pd.DataF
         )
     return pd.DataFrame(linhas)
 
+
 def treinar_pipeline(tmp_path: Path) -> Path:
     """Persiste um pipeline ajustado em disco."""
     treino = gerar_lote()
@@ -139,6 +149,7 @@ def treinar_pipeline(tmp_path: Path) -> Path:
     joblib.dump(pipeline, caminho)
     return caminho
 
+
 def descritor(tipo: str, caminho: Path, run_id: str) -> dict:
     return {
         "artifact_type": tipo,
@@ -147,11 +158,13 @@ def descritor(tipo: str, caminho: Path, run_id: str) -> dict:
         "producer_run_id": run_id,
     }
 
+
 def escrever_manifesto(caminho: Path, **campos: object) -> dict:
     conteudo = {"contract_version": "1.0", "status": "success"}
     conteudo.update(campos)
     caminho.write_text(json.dumps(conteudo), encoding="utf-8")
     return conteudo
+
 
 def preparar_manifestos(tmp_path: Path, inverter: bool = True) -> list[dict]:
     """Monta os manifestos de treinamento e simulacao com hashes reais."""
@@ -177,6 +190,7 @@ def preparar_manifestos(tmp_path: Path, inverter: bool = True) -> list[dict]:
         run_id="run-treino",
         stage="treinamento",
         dataset_id="teste",
+        schema_version="1.0",
         model_id="modelo-teste",
         reference_id="ref-teste",
         outputs=[
@@ -199,4 +213,22 @@ def preparar_manifestos(tmp_path: Path, inverter: bool = True) -> list[dict]:
             descritor("labels_reference", caminho_referencia, "run-concept"),
         ],
     )
-    return [modelo, lote]
+    features = lote["outputs"][0]
+    validacao = escrever_manifesto(
+        tmp_path / "man-validacao.json",
+        run_id="run-validacao",
+        stage="validacao",
+        dataset_id="teste",
+        schema_version="1.0",
+        scenario_id="concept-drift",
+        batch_id="batch-1",
+        inputs=[features.copy()],
+        outputs=[],
+        quality={
+            "approved": True,
+            "dataset_id": "teste",
+            "schema_version": "1.0",
+            "artifacts": [{**features, "approved": True}],
+        },
+    )
+    return [modelo, lote, validacao]

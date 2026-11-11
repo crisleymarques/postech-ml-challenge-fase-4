@@ -46,9 +46,13 @@ def montar_medidas(
         },
         {
             "name": "degradacao_detectada",
-            "value": 1 if comparacao["degradation_detected"] else 0,
+            "value": (
+                int(comparacao["degradation_detected"])
+                if comparacao["degradation_detected"] is not None
+                else None
+            ),
             "unit": "indicador",
-            "availability": "available",
+            "availability": disponibilidade,
         },
     ]
 
@@ -131,6 +135,7 @@ def montar_manifesto(
     saidas: list[dict[str, Any]],
     comparacao: dict[str, Any],
     linhas: int,
+    validacao_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Reune o manifesto comum do produtor da avaliacao."""
     return {
@@ -152,5 +157,6 @@ def montar_manifesto(
         "tool": {"name": "scikit-learn", "version": sklearn.__version__},
         "comparison": comparacao,
         "row_count": int(linhas),
+        "validation_run_id": validacao_run_id,
         "error_code": None,
     }

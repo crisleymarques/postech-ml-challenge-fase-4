@@ -27,7 +27,8 @@ def comparar(
         "min_delta": float(min_delta),
         "deltas": deltas,
         "metric_delta": variacao,
-        "degradation_detected": bool(detectada),
+        "degradation_detected": bool(detectada) if variacao is not None else None,
+        "availability": "available" if variacao is not None else "not_available",
     }
 
 

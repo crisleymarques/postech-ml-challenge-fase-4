@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from monitoramento.infraestrutura import manifestos
+from monitoramento.infraestrutura import manifestos, qualidade
+from monitoramento.infraestrutura.manifestos import versao_maior
+from monitoramento.infraestrutura.rotulos import validar_rotulos
 
 from .config import CONTRACT_VERSION, IDENTIFICADOR, ErroAvaliacao
 
@@ -17,20 +20,36 @@ carregar_manifesto = partial(
     manifestos.carregar_manifesto, erro=ErroAvaliacao, contract_version=CONTRACT_VERSION
 )
 artefato = partial(manifestos.artefato, erro=ErroAvaliacao)
-verificar_artefato = partial(manifestos.verificar_artefato, erro=ErroAvaliacao)
+verificar_aprovacao = partial(qualidade.verificar_aprovacao, erro=ErroAvaliacao)
+verificar_metadata = partial(qualidade.verificar_metadata, erro=ErroAvaliacao)
+
+
+def verificar_artefato(item: dict[str, Any]) -> Path:
+    """Exige hash valido e correspondente para cada entrada."""
+    esperado = item.get("sha256")
+    if not isinstance(esperado, str) or re.fullmatch(r"[0-9a-fA-F]{64}", esperado) is None:
+        raise ErroAvaliacao("Descritor sem sha256 valido.")
+    return manifestos.verificar_artefato({**item, "sha256": esperado.lower()}, erro=ErroAvaliacao)
 
 
 def separar_manifestos(
     manifestos: list[dict[str, Any]], config: dict[str, Any]
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Identifica o manifesto do modelo e o do lote pela etapa produtora."""
     etapa_modelo = config["model"]["producer_stage"]
     etapa_lote = config["batch"]["producer_stage"]
-    esperadas = (etapa_modelo, etapa_lote)
+    etapa_validacao = config["validation"]["producer_stage"]
+    esperadas = (etapa_modelo, etapa_lote, etapa_validacao)
 
     encontrados: dict[str, dict[str, Any]] = {}
     for manifesto in manifestos:
+        if manifesto.get("status") != "success":
+            raise ErroAvaliacao("Dependencia nao concluiu com sucesso.")
+        if versao_maior(manifesto.get("contract_version")) != "1":
+            raise ErroAvaliacao("Versao principal do contrato incompativel.")
         etapa = manifesto.get("stage")
+        if etapa not in esperadas:
+            raise ErroAvaliacao("Etapa de entrada inesperada.")
         if etapa in esperadas:
             if etapa in encontrados:
                 raise ErroAvaliacao(f"Manifesto duplicado para a etapa {etapa}.")
@@ -39,7 +58,7 @@ def separar_manifestos(
     ausentes = [etapa for etapa in esperadas if etapa not in encontrados]
     if ausentes:
         raise ErroAvaliacao(f"Manifestos ausentes para as etapas: {ausentes}")
-    return encontrados[etapa_modelo], encontrados[etapa_lote]
+    return encontrados[etapa_modelo], encontrados[etapa_lote], encontrados[etapa_validacao]
 
 
 def verificar_compatibilidade(
@@ -71,11 +90,15 @@ def juntar_rotulos(identificadores: pd.Series, caminho: Path, alvo: str) -> np.n
     if alvo not in rotulos.columns:
         raise ErroAvaliacao(f"Coluna alvo ausente nos rotulos: {alvo}")
 
-    numericos = pd.to_numeric(rotulos[alvo], errors="coerce")
-    if numericos.isna().any():
-        raise ErroAvaliacao("Os rotulos contem valores ausentes ou nao numericos.")
+    numericos = validar_rotulos(rotulos[alvo], erro=ErroAvaliacao)
+    if not rotulos[IDENTIFICADOR].is_unique:
+        raise ErroAvaliacao("Os rotulos possuem identificadores repetidos.")
+    if identificadores.isna().any() or (identificadores == "").any():
+        raise ErroAvaliacao("Identificadores ausentes no lote.")
+    if set(rotulos[IDENTIFICADOR]) - set(identificadores):
+        raise ErroAvaliacao("Os rotulos possuem registros extras ao lote.")
 
-    mapa = pd.Series(numericos.to_numpy(), index=rotulos[IDENTIFICADOR].to_numpy())
+    mapa = pd.Series(numericos, index=rotulos[IDENTIFICADOR].to_numpy())
     alinhado = identificadores.map(mapa)
     if alinhado.isna().any():
         raise ErroAvaliacao("Rotulos ausentes para alguns registros do lote.")

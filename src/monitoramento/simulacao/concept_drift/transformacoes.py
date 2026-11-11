@@ -7,6 +7,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from monitoramento.infraestrutura.rotulos import validar_rotulos
+
 from .config import IDENTIFICADOR, OPERACAO, ErroSimulacao
 
 
@@ -65,9 +67,9 @@ def aplicar_mudanca_conceito(
     if IDENTIFICADOR not in base.columns:
         raise ErroSimulacao(f"Coluna obrigatoria ausente: {IDENTIFICADOR}")
 
-    rotulos = pd.to_numeric(base[alvo], errors="coerce")
-    if rotulos.isna().any():
-        raise ErroSimulacao("A base contem rotulos ausentes ou nao numericos.")
+    rotulos = validar_rotulos(base[alvo], erro=ErroSimulacao)
+    if base.empty or not base[IDENTIFICADOR].is_unique or (base[IDENTIFICADOR] == "").any():
+        raise ErroSimulacao("A base exige registros e identificadores unicos nao vazios.")
 
     positivos = int(positivo)
     valores = pd.to_numeric(base[coluna], errors="coerce")
@@ -77,16 +79,16 @@ def aplicar_mudanca_conceito(
     gerador = np.random.default_rng(seed)
     sorteio = gerador.uniform(0.0, 1.0, size=len(base))
 
-    elegiveis = (rotulos.to_numpy() != positivos) & mascara
+    elegiveis = (rotulos != positivos) & mascara
     vira = elegiveis & (sorteio < perigo)
 
-    novos = rotulos.to_numpy().astype(int).copy()
+    novos = rotulos.astype(int).copy()
     novos[vira] = positivos
 
     alterada = base.copy()
     alterada[alvo] = novos.astype(str)
 
-    taxa_antes = float((rotulos.to_numpy() == positivos).mean())
+    taxa_antes = float((rotulos == positivos).mean())
     taxa_depois = float((novos == positivos).mean())
     descricao = {
         "description": conceito["rationale"],

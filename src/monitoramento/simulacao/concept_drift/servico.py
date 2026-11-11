@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from monitoramento.infraestrutura import observabilidade
-from monitoramento.infraestrutura.arquivos import escrever_json, sha256_arquivo
+from monitoramento.infraestrutura.arquivos import escrever_json_atomico as escrever_json
+from monitoramento.infraestrutura.arquivos import sha256_arquivo
 from monitoramento.infraestrutura.observabilidade import agora_iso, escrever_eventos
 
 from .artefatos import (
@@ -34,23 +35,42 @@ def gerar(
     seed: int | None,
 ) -> int:
     """Gera o cenario de Concept Drift e publica manifesto, eventos e metricas."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    iniciado = agora_iso()
-    eventos: list[dict[str, Any]] = []
-
     try:
         config = carregar_config(config_path)
         dataset_id = config["dataset_id"]
         scenario_id = config["scenario_id"]
-        registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "started", "INFO")
-
         origem = source_path or Path(config["base"]["path"])
+        raiz_analise = analysis_dir or Path(config["outputs"]["analysis_dir"])
+        destino = raiz_analise / scenario_id / batch_id
+        semente = int(seed if seed is not None else config["concept"].get("seed", 42))
+        if semente < 0:
+            raise ValueError("Seed invalida.")
+        config["concept"]["seed"] = semente
+        config["base"]["path"] = origem.as_posix()
+        config["outputs"]["analysis_dir"] = raiz_analise.as_posix()
+    except (ErroSimulacao, ValueError, TypeError, KeyError, OSError):
+        print("Configuracao invalida para a simulacao de Concept Drift.")
+        return CODIGO_ERRO
+    if output_dir.exists() or destino.exists():
+        print("Diretorio de execucao ou lote ja existe.")
+        return CODIGO_ERRO
+    try:
+        output_dir.mkdir(parents=True, exist_ok=False)
+    except OSError:
+        print("Nao foi possivel reservar a execucao.")
+        return CODIGO_ERRO
+    iniciado = agora_iso()
+    eventos: list[dict[str, Any]] = []
+
+    registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "started", "INFO")
+    try:
+        escrever_json(output_dir / "config.json", config)
+        escrever_eventos(output_dir / "events.jsonl", eventos)
+        destino.mkdir(parents=True, exist_ok=False)
         base = carregar_base(origem)
 
         alvo = config["target"]["column"]
         positivos = int(config["target"]["positive_value"])
-        semente = int(seed if seed is not None else config["concept"].get("seed", 42))
-
         alterada, descricao = aplicar_mudanca_conceito(
             base, alvo, positivos, config["concept"], semente
         )
@@ -58,10 +78,9 @@ def gerar(
         features, rotulos_ref = separar_features_rotulos(base, alvo)
         _, rotulos_novos = separar_features_rotulos(alterada, alvo)
 
-        destino = (analysis_dir or Path(config["outputs"]["analysis_dir"])) / scenario_id
-        caminho_features = destino / batch_id / "features.csv"
-        caminho_rotulos = destino / batch_id / "labels.csv"
-        caminho_ref = destino / batch_id / "labels_reference.csv"
+        caminho_features = destino / "features.csv"
+        caminho_rotulos = destino / "labels.csv"
+        caminho_ref = destino / "labels_reference.csv"
         escrever_artefato(caminho_features, features)
         escrever_artefato(caminho_rotulos, rotulos_novos)
         escrever_artefato(caminho_ref, rotulos_ref)
@@ -84,13 +103,15 @@ def gerar(
             output_dir / "metrics.json",
             {"run_id": run_id, "measurements": montar_medidas(descricao, len(features))},
         )
+        registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "completed", "INFO")
+        escrever_eventos(output_dir / "events.jsonl", eventos)
         escrever_json(
             output_dir / "manifest.json",
             montar_manifesto(
                 run_id=run_id,
                 iniciado=iniciado,
                 finalizado=agora_iso(),
-                config_path=config_path,
+                config_path=output_dir / "config.json",
                 config=config,
                 batch_id=batch_id,
                 seed=semente,
@@ -99,10 +120,47 @@ def gerar(
                 descricao=descricao,
             ),
         )
-        registrar_evento(eventos, run_id, dataset_id, scenario_id, batch_id, "completed", "INFO")
-        escrever_eventos(output_dir / "events.jsonl", eventos)
-    except (ErroSimulacao, ValueError) as erro:
-        print(f"Falha ao gerar o cenario de Concept Drift: {erro}")
+    except Exception as erro:  # Fronteira: registra falhas de entrada, transformacao e IO.
+        eventos[:] = [e for e in eventos if e["event"] != "completed"]
+        registrar_evento(
+            eventos,
+            run_id,
+            dataset_id,
+            scenario_id,
+            batch_id,
+            "failed",
+            "ERROR",
+            "SIMULACAO_INVALIDA",
+        )
+        falha = {
+            "contract_version": "1.0",
+            "run_id": run_id,
+            "stage": STAGE,
+            "status": "failed",
+            "started_at": iniciado,
+            "finished_at": agora_iso(),
+            "config_path": (output_dir / "config.json").as_posix(),
+            "dataset_id": dataset_id,
+            "schema_version": config["schema_version"],
+            "scenario_id": scenario_id,
+            "batch_id": batch_id,
+            "model_id": None,
+            "reference_id": None,
+            "inputs": [],
+            "outputs": [],
+            "error_code": "SIMULACAO_INVALIDA",
+        }
+        for escrever, caminho, conteudo in (
+            (escrever_json, output_dir / "config.json", config),
+            (escrever_eventos, output_dir / "events.jsonl", eventos),
+            (escrever_json, output_dir / "metrics.json", {"run_id": run_id, "measurements": []}),
+            (escrever_json, output_dir / "manifest.json", falha),
+        ):
+            try:
+                escrever(caminho, conteudo)
+            except OSError:
+                print(f"Nao foi possivel persistir {caminho.name} da falha.")
+        print(f"Falha ao gerar Concept Drift ({type(erro).__name__}).")
         return CODIGO_ERRO
 
     print(f"Cenario de Concept Drift ({scenario_id}): {len(features)} linhas")

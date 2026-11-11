@@ -14,9 +14,18 @@
     "labels_artifact": "labels",
     "reference_labels_artifact": "labels_reference"
   },
-  "metrics": ["accuracy", "precision", "recall", "f1", "roc_auc"],
+  "metrics": [
+    "accuracy",
+    "precision",
+    "recall",
+    "f1",
+    "roc_auc"
+  ],
   "degradation": {
     "metric": "roc_auc",
     "min_delta": 0.02
+  },
+  "validation": {
+    "producer_stage": "validacao"
   }
 }

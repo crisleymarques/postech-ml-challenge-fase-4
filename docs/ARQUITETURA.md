@@ -427,3 +427,23 @@ e CLI. As duas etapas reutilizam `infraestrutura/`; o carregamento do modelo
 reutiliza `modelos/carregamento.py`. A inferência da avaliação preserva o limiar
 dos metadados, enquanto a predição mantém sua própria regra com `pipeline.predict`.
 Os comandos são `uv run simular-concept-drift` e `uv run avaliar-concept-drift`.
+
+### Integridade e qualidade do Concept Drift
+
+A avaliação de Concept Drift exige três manifestos: treinamento, simulação e
+validação de produção aprovada. A barreira de qualidade e a identidade dos
+metadados são compartilhadas com a predição em `infraestrutura/qualidade.py`.
+A aprovação precisa corresponder ao dataset, schema, cenário, lote, produtor,
+caminho e hash das features. Os rótulos dos dois conceitos são validados como
+0/1 finitos, sem conversão de frações, com IDs únicos e alinhamento exato.
+
+Os serviços reservam destinos exclusivos para execução e lote antes da escrita.
+Publicações CSV/JSON são atômicas e o manifesto terminal é publicado após os
+eventos finais. Falhas após o início preservam diagnósticos e manifesto `failed`
+com `outputs` vazio, quando a persistência estiver disponível. Configuração
+inválida não inicia execução. Destinos existentes nunca são sobrescritos.
+
+A comparação distingue degradação detectada (`true`), avaliada sem degradação
+(`false`) e não avaliável (`null`, `availability: not_available`). A falta de
+ROC AUC não dispara alerta nem falha técnica. Consumidores devem exibir essa
+situação como indisponível, preservando o sucesso operacional da avaliação.

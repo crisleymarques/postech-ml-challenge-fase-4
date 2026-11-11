@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import pandas as pd
@@ -22,7 +24,13 @@ def carregar_base(caminho: Path) -> pd.DataFrame:
 def escrever_artefato(caminho: Path, base: pd.DataFrame) -> None:
     """Grava um artefato tabular em CSV preservando as colunas observadas."""
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    base.to_csv(caminho, index=False, encoding="utf-8")
+    with NamedTemporaryFile(dir=caminho.parent, suffix=".tmp", delete=False) as arquivo:
+        temporario = Path(arquivo.name)
+    try:
+        base.to_csv(temporario, index=False, encoding="utf-8")
+        os.replace(temporario, caminho)
+    finally:
+        temporario.unlink(missing_ok=True)
 
 
 def descritor_artefato(tipo: str, caminho: Path, run_id: str, base: pd.DataFrame) -> dict[str, Any]:

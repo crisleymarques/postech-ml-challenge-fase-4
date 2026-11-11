@@ -1,4 +1,5 @@
 """CLI da avaliacao de Concept Drift em processo separado."""
+
 from __future__ import annotations
 
 import json
@@ -8,6 +9,8 @@ import sys
 from pathlib import Path
 
 import joblib
+import pandas as pd
+import pytest
 from sklearn.linear_model import LogisticRegression
 
 from monitoramento.infraestrutura.arquivos import sha256_arquivo
@@ -22,7 +25,11 @@ def executar_cli(*argumentos: str) -> subprocess.CompletedProcess:
     ambiente["PYTHONPATH"] = str(RAIZ / "src")
     return subprocess.run(
         [sys.executable, "-m", "monitoramento.avaliacao.concept_drift.cli", *argumentos],
-        cwd=RAIZ, env=ambiente, capture_output=True, text=True, check=False,
+        cwd=RAIZ,
+        env=ambiente,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
@@ -34,8 +41,17 @@ def test_cli_expoe_argumentos_existentes() -> None:
         assert argumento in resultado.stdout
 
 
-def test_cli_publica_comparacao_dos_conceitos(tmp_path: Path) -> None:
+@pytest.mark.parametrize("classe_unica", [False, True])
+def test_cli_publica_comparacao_dos_conceitos(tmp_path: Path, classe_unica: bool) -> None:
     manifestos = preparar_manifestos(tmp_path, inverter=True)
+    if classe_unica:
+        for item in manifestos[1]["outputs"]:
+            if item["artifact_type"] in ("labels", "labels_reference"):
+                base = pd.read_csv(item["path"])
+                base["loan_status"] = 0
+                base.to_csv(item["path"], index=False)
+                item["sha256"] = sha256_arquivo(Path(item["path"]))
+        (tmp_path / "man-concept.json").write_text(json.dumps(manifestos[1]))
     treino = gerar_lote()
     pipeline = LogisticRegression(max_iter=200).fit(treino[NUMERICAS], treino["loan_status"])
     joblib.dump(pipeline, tmp_path / "pipeline.pkl")
@@ -50,9 +66,18 @@ def test_cli_publica_comparacao_dos_conceitos(tmp_path: Path) -> None:
     output = tmp_path / "run"
 
     resultado = executar_cli(
-        "--config", str(config), "--input-manifest", str(tmp_path / "man-treino.json"),
-        "--input-manifest", str(tmp_path / "man-concept.json"), "--run-id", "cli-avaliacao",
-        "--output-dir", str(output),
+        "--config",
+        str(config),
+        "--input-manifest",
+        str(tmp_path / "man-treino.json"),
+        "--input-manifest",
+        str(tmp_path / "man-concept.json"),
+        "--input-manifest",
+        str(tmp_path / "man-validacao.json"),
+        "--run-id",
+        "cli-avaliacao",
+        "--output-dir",
+        str(output),
     )
 
     assert resultado.returncode == 0, resultado.stdout + resultado.stderr
@@ -60,4 +85,4 @@ def test_cli_publica_comparacao_dos_conceitos(tmp_path: Path) -> None:
     assert manifesto["status"] == "success"
     assert manifesto["stage"] == "avaliacao"
     documento = json.loads((output / "performance.json").read_text())
-    assert documento["comparison"]["degradation_detected"] is True
+    assert documento["comparison"]["degradation_detected"] is (None if classe_unica else True)

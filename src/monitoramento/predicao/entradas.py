@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from monitoramento.infraestrutura import manifestos as manifestos_infra
+from monitoramento.infraestrutura import qualidade
 
 from .config import CONTRACT_VERSION, ErroPredicao
 
@@ -72,57 +73,11 @@ def verificar_compatibilidade(
             )
 
 
-def verificar_metadata(
-    metadata: dict[str, Any], modelo: dict[str, Any], lote: dict[str, Any]
-) -> None:
-    """Exige identidade e schema consistentes antes de carregar o modelo."""
-    schema = modelo.get("schema_version")
-    if (
-        not isinstance(schema, str)
-        or not schema.strip()
-        or any(origem.get("schema_version") != schema for origem in (metadata, lote))
-    ):
-        raise ErroPredicao("schema_version ausente ou divergente entre modelo, metadados e lote.")
-    for campo in ("dataset_id", "model_id", "reference_id"):
-        valor = modelo.get(campo)
-        if not isinstance(valor, str) or not valor.strip() or metadata.get(campo) != valor:
-            raise ErroPredicao(f"{campo} ausente ou divergente nos metadados do modelo.")
-
-
 def ler_lote(caminho: Path) -> pd.DataFrame:
     """Le o lote como texto tratando campo vazio como ausencia, como no treino."""
     base = pd.read_csv(caminho, dtype=str, na_filter=False)
     return base.replace("", np.nan)
 
 
-def verificar_aprovacao(
-    validacao: dict[str, Any], lote: dict[str, Any], features: dict[str, Any]
-) -> None:
-    """Vincula a aprovacao de producao ao lote e ao CSV exato consumido."""
-    qualidade = validacao.get("quality")
-    if not validacao.get("run_id") or not isinstance(qualidade, dict):
-        raise ErroPredicao("Manifesto de validacao sem aprovacao de qualidade.")
-    if qualidade.get("approved") is not True:
-        raise ErroPredicao("Qualidade do lote nao aprovada.")
-    for campo in ("dataset_id", "schema_version", "scenario_id", "batch_id"):
-        valor = lote.get(campo)
-        if not isinstance(valor, str) or not valor.strip() or validacao.get(campo) != valor:
-            raise ErroPredicao(f"{campo} divergente na aprovacao do lote.")
-        if campo in ("dataset_id", "schema_version") and qualidade.get(campo) != valor:
-            raise ErroPredicao(f"{campo} divergente no resumo de qualidade.")
-    entradas = [i for i in validacao.get("inputs", []) if i.get("artifact_type") == "features"]
-    aprovados = [i for i in qualidade.get("artifacts", []) if i.get("artifact_type") == "features"]
-    if len(entradas) != 1 or len(aprovados) != 1:
-        raise ErroPredicao("Aprovacao deve identificar um unico artefato features.")
-    entrada, aprovado = entradas[0], aprovados[0]
-    if (
-        aprovado.get("approved") is not True
-        or aprovado.get("sha256") != features.get("sha256")
-        or entrada.get("sha256") != features.get("sha256")
-        or not isinstance(entrada.get("path"), str)
-        or Path(entrada["path"]).resolve() != Path(features["path"]).resolve()
-        or not lote.get("run_id")
-        or entrada.get("producer_run_id") != lote["run_id"]
-        or features.get("producer_run_id") != lote["run_id"]
-    ):
-        raise ErroPredicao("Aprovacao nao corresponde ao hash, caminho ou produtor das features.")
+verificar_metadata = partial(qualidade.verificar_metadata, erro=ErroPredicao)
+verificar_aprovacao = partial(qualidade.verificar_aprovacao, erro=ErroPredicao)
