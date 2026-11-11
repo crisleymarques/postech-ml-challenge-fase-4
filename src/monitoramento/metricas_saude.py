@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from monitoramento.infraestrutura.arquivos import escrever_json_atomico
 from monitoramento.infraestrutura.observabilidade import status_publicado
 
 CONTRACT_VERSION = "1.0"
@@ -368,7 +369,7 @@ def situacao_medida(metrica: dict[str, Any], valor: Any) -> str:
     elif direcao == DIRECAO_MENOR_PIOR:
 
         def atingiu(limiar: Any) -> bool:
-            return valor <= limiar
+            return valor < limiar
 
     else:
         return SITUACAO_OK
@@ -461,10 +462,8 @@ def montar_resumo(
 
 
 def gravar_saude(caminho: Path, saude: dict[str, Any]) -> None:
-    """Grava o relatorio de saude operacional em JSON UTF-8."""
-    with caminho.open("w", encoding="utf-8") as arquivo:
-        json.dump(saude, arquivo, ensure_ascii=False, indent=2)
-        arquivo.write("\n")
+    """Publica o JSON completo, preservando o relatorio anterior se houver falha."""
+    escrever_json_atomico(caminho, saude)
 
 
 def gerar(runs_dir: Path, output_dir: Path, catalogo_path: Path) -> dict[str, Any]:
