@@ -4,7 +4,8 @@
 
 No escopo do PR #32 estão implementados a preparação e separação de dados
 (F1-01), o treinamento baseline (F1-02) e a validação Pandera antes do treino
-(F1-03). A simulação de lotes, predição, detecção de drift e dashboard seguem
+(F1-03). Predição F2-02 também está implementada, condicionada à validação
+de produção. Detecção de drift e dashboard seguem
 planejados e não devem ser tratados como comandos disponíveis. Testes sintéticos
 cobrem a integração preparação → validação → treinamento; resultados históricos
 do dataset real não foram reexecutados como parte do PR #32.
@@ -14,6 +15,39 @@ de referência. Ele gera partições com seis anomalias intencionais a partir da
 base de simulação, preserva destinos existentes e registra falhas de execução.
 Aceita apenas `reference` com `train`, `validation` e `test`; a simulação de
 produção com artefato `features` continua fora desse componente.
+
+O PR #34 implementa a simulação temporal de Data Drift (F2-01) em
+`simulacao/data_drift/`: consome a base reservada, exige avanço temporal positivo
+e alteração efetiva da distribuição de pelo menos duas features, preserva
+ausências e rejeita valores numéricos inválidos. Publica features e rótulos
+separados, com parâmetros e alterações efetivas no manifesto.
+
+O pacote `simulacao/data_drift/` separa configuração (`config.py`),
+transformações sem escrita em disco (`transformacoes.py`), leitura e
+representações dos artefatos (`artefatos.py`), orquestração (`servico.py`) e
+linha de comando (`cli.py`). Hashes e escrita JSON ficam em
+`infraestrutura/arquivos.py`; timestamps e eventos JSONL ficam em
+`infraestrutura/observabilidade.py`. O comando é `uv run simular-data-drift`.
+
+O pacote `drift/deteccao/` separa configuração, entradas, regras, resultados,
+serviço e CLI. A integração com o Evidently fica em `adaptador_evidently.py`;
+a leitura e seleção de features ficam em `drift/dados.py`. As regras de
+decisão não importam o Evidently. O comando é `uv run detectar-drift`.
+O adaptador calcula estatísticas; `relatorio.py` apresenta o documento canônico
+em HTML customizado. JSON, HTML, métricas e alertas compartilham as mesmas
+regras e os mesmos limiares. A detecção exige SHA-256 válido das três entradas
+e cobertura de todas as features declaradas nos metadados. Colunas inteiramente
+nulas recebem resultado indisponível e ficam fora do denominador; nenhuma
+feature avaliável implica falha controlada. `changed_variables.not_evaluated`
+distingue indisponibilidade de ausência de drift.
+
+A reserva do diretório é exclusiva dentro do serviço. A detecção publica o
+manifesto atomicamente e por último, após os eventos finais; falhas publicam
+manifesto terminal `failed`, quando o armazenamento permite. Consumidores só
+reconhecem sucesso quando manifesto e eventos finais correspondem à mesma
+execução e etapa; a ausência de `drift_alert` exigido pelo resumo também
+caracteriza publicação incompleta.
+
 
 A arquitetura é um pipeline local em lote, com Python 3.12, uv, arquivos como
 interface e dashboard Streamlit. As dependências incluem pandas,
@@ -54,9 +88,12 @@ flowchart TD
 | `preparacao.py` | Implementado: ler a fonte configurada, executar transformações determinísticas e separar partições | Arquivo de origem e configuração do dataset | Treino, validação, teste, base de simulação e manifesto com contrato semântico do alvo |
 | `validacao.py` | Implementado: aplicar contrato Pandera e bloquear conjunto inválido | Manifesto do produtor e contrato de qualidade | Relatório de qualidade e manifesto de aprovação ou rejeição |
 | `treinamento.py` | Implementado: ajustar no treino, selecionar na validação e avaliar no teste | Partições aprovadas e contrato do modelo | Pipeline serializado, metadados, métricas de avaliação e referência |
-| Simulação | Planejado: produzir lotes independentes e mudanças configuradas | Base de simulação, cenário e seed | Lotes por período e manifesto de cada cenário |
-| Predição | Planejado: aplicar o pipeline treinado | Lote aprovado e manifesto do modelo | Predições vinculadas ao modelo e lote |
+| `simulacao/data_drift/` | Implementado: produzir lotes de Data Drift com avanço temporal e mudanças efetivas em pelo menos duas features | Base de simulação, cenário e seed | Features e rótulos separados, manifesto com período e alterações efetivas |
+| Predição | Implementado: aplicar o pipeline treinado após aprovação | Manifestos de treinamento, simulação e validação de produção | Predições vinculadas ao modelo e lote |
 | Detecção | Planejado: comparar referência e lote; avaliar desempenho quando houver rótulos compatíveis | Referência, lote aprovado, predições e configuração | Resultados estatísticos, alertas e HTML |
+| `drift/analise/` | Aplicar PSI e Kolmogorov-Smirnov por variável e interpretar o drift | Referência e lote simulado | Resultados por variável, cruzamento com as variáveis alteradas e conclusões técnicas |
+| `simulacao/concept_drift/` | Gerar cenário de Concept Drift alterando a relação entre perfil e desfecho de um segmento, mantendo as features | Base de simulação, segmento e regra de mudança | Features inalteradas, rótulos do novo conceito, rótulos originais e manifesto do cenário |
+| `avaliacao/concept_drift/` | Comparar o desempenho do modelo entre o conceito original e o cenário de Concept Drift | Modelo e referência do treinamento e lote de Concept Drift | Métricas por conceito, comparação e interpretação em `performance.json` |
 | Dashboard | Planejado: apresentar execuções e resultados persistidos | Manifestos, eventos, métricas e relatórios | Visualização Streamlit |
 
 A validação se aplica antes de qualquer ajuste ou predição. A preparação não
@@ -128,7 +165,7 @@ Cada etapa produz `reports/runs/<run_id>/manifest.json`. Campos obrigatórios:
 | --- | --- |
 | `contract_version` | String; versão inicial `1.0` para a estrutura das interfaces |
 | `run_id` | String; identificador da execução da etapa |
-| `stage` | Enum: `preparacao`, `validacao`, `treinamento`, `simulacao`, `predicao`, `deteccao` |
+| `stage` | Enum: `preparacao`, `validacao`, `treinamento`, `simulacao`, `predicao`, `deteccao`, `analise`, `avaliacao` |
 | `status` | Enum terminal: `success`, `rejected`, `failed`, `skipped` |
 | `started_at`, `finished_at` | Strings ISO 8601 UTC |
 | `config_path` | String; configuração efetivamente utilizada |
@@ -208,6 +245,8 @@ disponíveis para execução agora.
 | Simulação | Features CSV; manifesto com `scenario_id`, `batch_id`, período, base de origem, seed, variáveis alteradas, transformações e parâmetros; rótulos em arquivo separado, se existirem |
 | Predição | `data/analysis/<scenario_id>/<batch_id>/<model_id>/predictions.csv`, com `record_id`, `prediction` e `score` numérico ou vazio; manifesto informa se `score` está disponível e seu significado; sem probabilidade inventada para modelos que não a forneçam |
 | Detecção | `drift.json` e `drift.html` em `reports/runs/<run_id>/`; resultados por variável com `feature`, `method`, `statistic`, `threshold` e `drift_detected`; métricas de desempenho, quando calculáveis, em `performance.json` |
+| Análise | `analise.json` em `reports/runs/<run_id>/`; resultados por variável com `psi`, `psi_band`, `ks_statistic`, `ks_p_value`, `drift_detected` e `reasons`; cruzamento das variáveis alteradas intencionalmente (`configured`, `confirmed`, `not_confirmed`) e conclusões técnicas |
+| Avaliação | `performance.json` em `reports/runs/<run_id>/`; métricas por conceito (`reference` e `concept_drift`), variações por métrica, critério de degradação declarado, mudança de conceito aplicada e conclusões, separando Data Drift, Concept Drift e queda de desempenho |
 | Todas as etapas | `config.json`, `events.jsonl`, `metrics.json` e `manifest.json` em `reports/runs/<run_id>/` |
 
 O treinamento publica cada modelo e referência em diretórios novos, sem
@@ -247,9 +286,14 @@ Os cenários devem separar:
   importantes, mantendo as regras rígidas quando o objetivo for chegar à
   detecção. Isso separa uma rejeição de qualidade de um alerta estatístico.
 - Concept Drift, com mudança explicitamente definida na relação entre
-  entradas e alvo. O desenho e a disponibilidade de rótulos estão pendentes;
-  mudar features ou apenas inverter rótulos sem justificativa não demonstra,
-  por si só, esse fenômeno no problema de negócio.
+  entradas e alvo. O cenário é produzido por `simulacao/concept_drift/`,
+  que mantém as features inalteradas e altera o desfecho de um segmento
+  justificado, com risco crescente à medida que o perfil se afasta do limite
+  do segmento e limite de probabilidade configurado. Os rótulos originais e
+  os rótulos do novo conceito são publicados lado a lado, o que permite
+  comparar o desempenho do modelo entre os dois conceitos em
+  `avaliacao/concept_drift/`. Mudar features ou apenas inverter rótulos sem
+  justificativa não demonstra, por si só, esse fenômeno no problema de negócio.
 
 Data Drift, Concept Drift e queda de desempenho são resultados distintos.
 O dashboard deve apresentar cada evidência com seu contexto. Mudança de
@@ -331,3 +375,75 @@ relatório de drift e exibição de sucesso, bloqueio e falha no dashboard.
 ### Configuração inválida e início da execução
 
 A configuração é validada antes da criação do diretório de uma execução. Se for inválida, o comando termina com código 1 e uma mensagem controlada; como a execução ainda não começou, não cria diretório de execução, eventos nem manifesto. Depois que o diretório é criado, falhas técnicas ao ler ou preparar a origem são registradas em eventos e manifesto terminal sempre que a persistência estiver disponível.
+
+### Organização da predição (F2-02)
+
+O componente fica em `src/monitoramento/predicao/`, separado em configuração,
+entradas, inferência, resultados, serviço e CLI. Manifestos e integridade
+reutilizam `infraestrutura/manifestos.py`; o carregamento do pipeline e a
+compatibilidade com conversores persistidos ficam em `modelos/carregamento.py`.
+O comando é `uv run gerar-predicoes`; os testes ficam em `tests/predicao/`.
+
+
+A predição exige três manifestos, sem dependência da ordem: treinamento,
+simulação e validação. O resumo `quality` deve aprovar o único artefato
+`features`, com o mesmo hash, caminho e produtor do lote. Dataset, schema,
+cenário e lote precisam coincidir. A etapa recalcula a integridade antes de
+inferir e registra `quality_validation_run_id`. Não há aprovação implícita
+quando a validação está ausente ou rejeitada.
+
+A publicação de predições reserva um diretório cenário/lote/modelo novo.
+Reexecuções e tentativas concorrentes não sobrescrevem resultados. CSV e
+manifesto são publicados atomicamente; o manifesto terminal fecha a publicação.
+Em falhas, `outputs` fica vazio e arquivos parciais não são consumíveis.
+
+### Organização da análise estatística (F2-04)
+
+O pacote `drift/analise/` separa configuração, entradas, PSI,
+Kolmogorov-Smirnov, interpretação, resultados, serviço e CLI. A leitura e
+seleção de features reutilizam `drift/dados.py`; arquivos, manifestos e eventos
+reutilizam `infraestrutura/`. A análise não importa o adaptador Evidently.
+O comando é `uv run analisar-drift`; os testes ficam em `tests/drift/analise/`.
+
+A análise estatística avalia PSI e K-S independentemente: quantis insuficientes
+não invalidam um K-S calculável. Uma variável fica não avaliável somente quando
+nenhum teste está disponível. As features dos metadados são obrigatórias nas duas
+entradas; sua ausência bloqueia a execução sem relatório parcial.
+
+A análise reserva exclusivamente seu diretório e carrega os manifestos de entrada
+dentro da execução monitorada. O manifesto terminal é publicado atomicamente por
+último, após eventos e métricas. Falhas após o início produzem `failed`, código
+`ANALISE_INVALIDA`, métricas vazias e `outputs: []`, quando a persistência permite;
+IDs e entradas já resolvidos são mantidos para diagnóstico. Configuração inválida
+e destino existente são recusados antes de iniciar. Alertas de drift continuam
+sendo sucesso operacional.
+
+### Organização do Concept Drift (F2-05)
+
+A simulação fica em `simulacao/concept_drift/`, com configuração, transformações,
+artefatos, serviço e CLI. A avaliação fica em `avaliacao/concept_drift/`, com
+configuração, entradas, inferência, métricas, interpretação, resultados, serviço
+e CLI. As duas etapas reutilizam `infraestrutura/`; o carregamento do modelo
+reutiliza `modelos/carregamento.py`. A inferência da avaliação preserva o limiar
+dos metadados, enquanto a predição mantém sua própria regra com `pipeline.predict`.
+Os comandos são `uv run simular-concept-drift` e `uv run avaliar-concept-drift`.
+
+### Integridade e qualidade do Concept Drift
+
+A avaliação de Concept Drift exige três manifestos: treinamento, simulação e
+validação de produção aprovada. A barreira de qualidade e a identidade dos
+metadados são compartilhadas com a predição em `infraestrutura/qualidade.py`.
+A aprovação precisa corresponder ao dataset, schema, cenário, lote, produtor,
+caminho e hash das features. Os rótulos dos dois conceitos são validados como
+0/1 finitos, sem conversão de frações, com IDs únicos e alinhamento exato.
+
+Os serviços reservam destinos exclusivos para execução e lote antes da escrita.
+Publicações CSV/JSON são atômicas e o manifesto terminal é publicado após os
+eventos finais. Falhas após o início preservam diagnósticos e manifesto `failed`
+com `outputs` vazio, quando a persistência estiver disponível. Configuração
+inválida não inicia execução. Destinos existentes nunca são sobrescritos.
+
+A comparação distingue degradação detectada (`true`), avaliada sem degradação
+(`false`) e não avaliável (`null`, `availability: not_available`). A falta de
+ROC AUC não dispara alerta nem falha técnica. Consumidores devem exibir essa
+situação como indisponível, preservando o sucesso operacional da avaliação.

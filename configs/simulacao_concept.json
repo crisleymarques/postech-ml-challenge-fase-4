@@ -1,0 +1,36 @@
+{
+  "contract_version": "1.0",
+  "stage": "simulacao",
+  "dataset_id": "lending_club_100k",
+  "schema_version": "1.0",
+  "scenario_id": "concept-drift",
+  "base": {
+    "artifact_type": "origem",
+    "path": "data/analysis/lending_club_100k_v1/simulation_base.csv"
+  },
+  "target": {
+    "column": "loan_status",
+    "positive_class": "Charged Off",
+    "negative_class": "Fully Paid",
+    "positive_value": 1,
+    "negative_value": 0
+  },
+  "concept": {
+    "seed": 42,
+    "rationale": "Cenario de recessao severa: tomadores 'prime' (fico_range_low alto), historicamente considerados seguros e de baixo risco, passam a inadimplir mais do que o historico projetava. O mesmo perfil passa a ter outro desfecho, o que caracteriza mudanca de conceito (P(y|X)) e nao mudanca de distribuicao das entradas (P(X)).",
+    "segment": {
+      "column": "fico_range_low",
+      "operator": ">=",
+      "value": 700.0
+    },
+    "hazard": {
+      "reference_value": 700.0,
+      "slope": 0.03,
+      "scale": 1.0,
+      "max_probability": 0.6
+    }
+  },
+  "outputs": {
+    "analysis_dir": "data/analysis"
+  }
+}

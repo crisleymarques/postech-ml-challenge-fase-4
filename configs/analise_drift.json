@@ -1,0 +1,23 @@
+{
+  "contract_version": "1.0",
+  "stage": "analise",
+  "dataset_id": "lending_club_100k",
+  "identifier": "record_id",
+  "reference": {
+    "producer_stage": "treinamento",
+    "features_artifact": "reference_features",
+    "metadata_artifact": "model_metadata"
+  },
+  "batch": {
+    "producer_stage": "simulacao",
+    "features_artifact": "features"
+  },
+  "method": {
+    "name": "psi_ks",
+    "bins": 10,
+    "psi_moderate": 0.1,
+    "psi_threshold": 0.25,
+    "ks_p_value_threshold": 0.05,
+    "ks_statistic_threshold": 0.1
+  }
+}
