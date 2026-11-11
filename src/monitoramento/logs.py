@@ -198,9 +198,48 @@ def analisar_execucao(run_dir: Path, eventos: list[dict[str, Any]]) -> dict[str,
         "status": status,
         "resultado": resultado_do_status(status),
         "error_code": manifesto.get("error_code"),
+        "finished_at": manifesto.get("finished_at"),
         "event_count": len(eventos),
         "transformations": list(transformacoes) if isinstance(transformacoes, list) else [],
     }
+
+
+def reunir_falhas(
+    execucoes: list[dict[str, Any]], eventos: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Preserva falhas dos manifestos quando falta o evento terminal equivalente."""
+    falhas = [
+        {
+            "run_id": evento.get("run_id"),
+            "stage": evento.get("stage"),
+            "categoria": categoria_da_etapa(evento.get("stage")),
+            "event": evento.get("event"),
+            "level": evento.get("level"),
+            "error_code": evento.get("error_code"),
+            "timestamp": evento.get("timestamp"),
+        }
+        for evento in eventos
+        if evento.get("event") in EVENTOS_DE_FALHA or evento.get("level") == "ERROR"
+    ]
+    registradas = {(falha["run_id"], falha["stage"], falha["event"]) for falha in falhas}
+    for execucao in execucoes:
+        status = execucao["status"]
+        identidade = (execucao["run_id"], execucao["stage"], status)
+        if status not in EVENTOS_DE_FALHA or identidade in registradas:
+            continue
+        falhas.append(
+            {
+                "run_id": execucao["run_id"],
+                "stage": execucao["stage"],
+                "categoria": categoria_da_etapa(execucao["stage"]),
+                "event": status,
+                "level": "ERROR",
+                "error_code": execucao.get("error_code"),
+                "timestamp": execucao.get("finished_at"),
+            }
+        )
+        registradas.add(identidade)
+    return falhas
 
 
 def montar_resumo(
@@ -226,19 +265,6 @@ def montar_resumo(
             contagem = por_categoria.setdefault(categoria, {valor: 0 for valor in ORDEM_RESULTADOS})
             contagem[resultado] = contagem.get(resultado, 0) + 1
 
-    falhas = [
-        {
-            "run_id": evento.get("run_id"),
-            "stage": evento.get("stage"),
-            "categoria": categoria_da_etapa(evento.get("stage")),
-            "event": evento.get("event"),
-            "level": evento.get("level"),
-            "error_code": evento.get("error_code"),
-            "timestamp": evento.get("timestamp"),
-        }
-        for evento in eventos
-        if evento.get("event") in EVENTOS_DE_FALHA or evento.get("level") == "ERROR"
-    ]
     publicadas = {
         (execucao["run_id"], execucao["stage"])
         for execucao in execucoes
@@ -283,7 +309,7 @@ def montar_resumo(
         "eventos": {"total": len(eventos)},
         "por_categoria": por_categoria,
         "transformacoes": transformacoes,
-        "falhas": falhas,
+        "falhas": reunir_falhas(execucoes, eventos),
         "alertas": alertas,
     }
 

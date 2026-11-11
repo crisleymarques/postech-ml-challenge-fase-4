@@ -325,8 +325,11 @@ categoria derivada da etapa — `ingestao`, `transformacao`, `validacao`,
 derivado do tipo de evento — `inicio`, `sucesso`, `rejeicao`, `falha`, `alerta`
 ou `ignorado`. A etapa `preparacao` alimenta as categorias `ingestao` e
 `transformacao`, que ocorrem de forma acoplada; as transformações aplicadas são
-lidas do manifesto. Execução sem evento terminal é contada como `incomplete`,
-sem inferir sucesso.
+lidas do manifesto. Manifestos com status `failed` ou `rejected` complementam a
+lista de falhas quando o evento terminal equivalente não foi persistido, usando
+`run_id`, `stage`, `error_code` e `finished_at`, sem duplicar falhas ou criar
+eventos no log original. As demais execuções sem publicação terminal confirmada
+são contadas como `incomplete`, sem inferir sucesso.
 
 Cada `metrics.json` contém `run_id` e lista `measurements`, com objetos
 `name`, `value`, `unit` e `availability`. `value` é número ou nulo;

@@ -849,7 +849,10 @@ torna as violações de contrato identificáveis — e a lista de **alertas** de
 drift com `scenario_id` e `batch_id`. A etapa `preparacao` realiza ingestão e
 transformação de forma acoplada; por isso seu desfecho alimenta as duas
 categorias e as transformações aplicadas são detalhadas a partir do manifesto.
-Execuções sem evento terminal aparecem como `incomplete`, sem inferir sucesso.
+Manifestos com status `failed` ou `rejected` também alimentam a lista de falhas
+quando não há evento terminal equivalente, preservando o código e o horário do
+erro sem duplicar registros ou criar eventos no log original. As demais execuções
+sem publicação terminal confirmada aparecem como `incomplete`, sem inferir sucesso.
 Os artefatos ficam em `reports/logs/`, ignorado pelo Git, e a etapa encerra com
 código `0` (sucesso) ou `1` (erro técnico).
 

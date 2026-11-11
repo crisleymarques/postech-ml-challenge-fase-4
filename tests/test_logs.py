@@ -506,3 +506,65 @@ def test_gerar_sem_execucoes(tmp_path: Path) -> None:
 def test_gerar_runs_dir_inexistente(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         lg.gerar(tmp_path / "inexistente", tmp_path / "logs")
+
+
+@pytest.mark.parametrize("status", ["failed", "rejected"])
+@pytest.mark.parametrize("com_inicio", [False, True])
+def test_gerar_preserva_falha_do_manifesto_sem_evento_terminal(
+    tmp_path: Path, status: str, com_inicio: bool
+) -> None:
+    runs_dir = tmp_path / "runs"
+    eventos = [evento(run_id="run-a", stage="validacao", tipo="started")] if com_inicio else []
+    run_dir = escrever_execucao(
+        runs_dir,
+        "run-a",
+        eventos,
+        {
+            "contract_version": "1.0",
+            "run_id": "run-a",
+            "stage": "validacao",
+            "status": status,
+            "error_code": "QUALIDADE_REPROVADA",
+            "finished_at": "2026-11-09T00:00:01.000000Z",
+        },
+    )
+    if not com_inicio:
+        (run_dir / "events.jsonl").unlink()
+    anteriores = {p.name: p.read_bytes() for p in run_dir.iterdir()}
+
+    resumo = lg.gerar(runs_dir, tmp_path / "logs")
+
+    assert resumo["execucoes"]["por_status"] == {status: 1}
+    assert resumo["falhas"] == [{
+        "run_id": "run-a",
+        "stage": "validacao",
+        "categoria": "validacao",
+        "event": status,
+        "level": "ERROR",
+        "error_code": "QUALIDADE_REPROVADA",
+        "timestamp": "2026-11-09T00:00:01.000000Z",
+    }]
+    # O diagnostico do manifesto nao inventa eventos nem altera a fonte.
+    assert resumo["eventos"]["total"] == len(eventos)
+    linhas = (tmp_path / "logs" / "operacional.jsonl").read_text().splitlines()
+    assert len(linhas) == len(eventos)
+    assert {p.name: p.read_bytes() for p in run_dir.iterdir()} == anteriores
+
+
+@pytest.mark.parametrize("status", ["failed", "rejected"])
+def test_gerar_nao_duplica_falha_presente_nos_eventos(tmp_path: Path, status: str) -> None:
+    runs_dir = tmp_path / "runs"
+    terminal = evento(
+        run_id="run-a", stage="validacao", tipo=status,
+        nivel="ERROR", error_code="QUALIDADE_REPROVADA",
+    )
+    escrever_execucao(
+        runs_dir, "run-a", [terminal],
+        {"run_id": "run-a", "stage": "validacao", "status": status},
+    )
+
+    resumo = lg.gerar(runs_dir, tmp_path / "logs")
+
+    assert len(resumo["falhas"]) == 1
+    assert resumo["falhas"][0]["error_code"] == terminal["error_code"]
+    assert resumo["falhas"][0]["timestamp"] == terminal["timestamp"]
