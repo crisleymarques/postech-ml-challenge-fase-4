@@ -911,6 +911,43 @@ Na execução real sobre as 11 execuções registradas, foram coletadas 48 medid
 uv run pytest tests/test_metricas_saude.py -q
 ```
 
+## Integração de drift, métricas e alertas — F3-03
+
+O componente [src/monitoramento/alertas.py](src/monitoramento/alertas.py) integra
+os artefatos já consolidados — as métricas de saúde (`reports/saude/saude.json`,
+F3-02) e os logs operacionais (`reports/logs/resumo.json`, F3-01) — e aplica os
+critérios declarados em [configs/alertas.json](configs/alertas.json):
+
+- medida de saúde com situação `atencao` gera alerta `warning`;
+- medida de saúde com situação `critico` gera alerta `critical`;
+- falha de execução ou de contrato registrada nos logs gera alerta `critical`;
+- evento `drift_alert` registrado nos logs gera alerta `warning`.
+
+```powershell
+uv run python src/monitoramento/alertas.py --saude reports/saude/saude.json --logs-resumo reports/logs/resumo.json --config configs/alertas.json --output-dir reports/alertas
+```
+
+| Artefato | Local |
+|---|---|
+| Alertas, bloco de drift e resumo | `reports/alertas/alertas.json` |
+
+Cada alerta é identificável (`id`, `severidade`, `categoria`, `origem`, `fonte`,
+`valor`, `situacao`, `error_code` e `evidencia`) e contabilizável. O artefato
+reúne ainda um bloco consolidado de drift (presença, variáveis com drift,
+proporção e total de alertas) e um resumo por severidade, categoria e origem.
+O componente apenas integra e sinaliza: não relê os artefatos brutos, não altera
+as etapas anteriores e não converte alerta em erro — encerra com código `0`
+(sucesso) ou `1` (erro técnico). Os artefatos ficam em `reports/alertas/`,
+ignorado pelo Git.
+
+Na execução real sobre os relatórios consolidados, foram integrados 14 alertas
+(`warning=11`, `critical=3`), com o bloco de drift indicando `dataset_drift=True`,
+13 variáveis com drift, proporção 0,590909 e 3 alertas de drift.
+
+```powershell
+uv run pytest tests/test_alertas.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -993,6 +1030,10 @@ Concluídos:
   classificação por situação com dois níveis de limiar (`atencao`/`critico`),
   medidas em `reports/saude/saude.json` e testes em
   `tests/test_metricas_saude.py`.
+- Integração de drift, métricas e alertas (F3-03), com critérios de alerta em
+  `configs/alertas.json`, sinalização de falhas e degradação com severidade,
+  bloco consolidado de drift, alertas identificáveis e contabilizáveis em
+  `reports/alertas/alertas.json` e testes em `tests/test_alertas.py`.
 
 Pendentes:
 
