@@ -150,10 +150,13 @@ mudam, evitando sobrescrita nos caminhos de dados e modelos.
 - `record_id` é uma string técnica única, criada antes da separação e
   preservada nos cenários. Duplicidade entre períodos deve ser distinguida
   pelo `batch_id`; o alinhamento usa o par `batch_id`, `record_id`.
-- A configuração atual define features, alvo, classes e regras de qualidade
-  para o Lending Club. O contrato de deriva e os schemas dos lotes simulados
-  permanecem pendentes. Schema incompatível bloqueia o consumo; colunas não
-  são renomeadas ou descartadas silenciosamente.
+- A configuração atual define features, alvo, classes e regras de qualidade para
+  o Lending Club, o contrato de deriva (`configs/deteccao.json` e
+  `configs/analise_drift.json`, com métodos e limiares explícitos) e os schemas
+  dos lotes simulados (`configs/simulacao.json` e `configs/simulacao_concept.json`,
+  com `contract_version` e `schema_version` verificados na leitura). Schema
+  incompatível bloqueia o consumo; colunas não são renomeadas ou descartadas
+  silenciosamente.
 - Cada etapa referencia `config.json` com os parâmetros efetivos e seed
   quando aplicável. Configurações e logs não contêm credenciais ou registros.
 - Saídas são gravadas em diretório novo por execução. O manifesto terminal

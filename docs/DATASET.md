@@ -264,15 +264,23 @@ implementados na issue de detecção (evidência da mudança de distribuição).
 |---|---|---|
 | `annual_inc` | Dado financeiro pessoal | Não publicar valores por indivíduo em relatórios |
 | `dti`, `revol_bal`, `revol_util` | Financeiro pessoal | Uso interno; agregar antes de expor |
+| `delinq_2yrs`, `inq_last_6mths`, `open_acc`, `pub_rec`, `total_acc`, `mort_acc`, `pub_rec_bankruptcies` | Histórico e comportamento de crédito | Uso interno; agregar antes de expor |
+| `purpose` | Finalidade do crédito (contexto pessoal) | Uso interno; agregar antes de expor |
 | `addr_state` | Localização (quasi-identificador) | Manter agregado; não cruzar com outros dados |
 | `earliest_cr_line`, `issue_d` | Histórico de crédito | Uso interno |
-| `fico_range_low` / `fico_range_high` | Score de crédito | Dado sensível |
+| `fico_range_low` / `fico_range_high` | Score de crédito | Dado pessoal com proteção reforçada; **não** integra o rol de dado sensível do Art. 5º, II (ver [LGPD.md](LGPD.md)) |
 | `emp_length` | Ocupação/renda implícita | Uso interno |
+| `home_ownership`, `application_type` | Perfil socioeconômico | Uso interno; agregar antes de expor |
 
 Campos **excluídos** da base derivada e recomendados a permanecer fora: `id`,
 `member_id` (identificadores diretos), `emp_title`, `title`, `desc` (texto livre) e
 `zip_code` (localização granular). Essas exclusões reduzem risco de
 reidentificação sob LGPD.
+
+Os demais campos do recorte são atributos do contrato e da classificação de
+risco (`term`, `int_rate`, `grade`, `sub_grade`, `verification_status`,
+`initial_list_status`), o identificador técnico pseudônimo `record_id` e o alvo
+`loan_status`. Ficam sujeitos às mesmas medidas descritas em [LGPD.md](LGPD.md).
 
 ## Critérios de aceite (PREP-02)
 
@@ -285,11 +293,13 @@ reidentificação sob LGPD.
 
 ## Pendências
 
-- Confirmar a licença de uso do dataset na página do Kaggle.
+- Confirmar a licença de uso do dataset na página do Kaggle (hoje registrada como
+  pendente em `configs/preparacao.json`).
 - Fixar a versão remota e registrar o hash da origem para reprodução entre ambientes.
 - Recalcular tamanho do arquivo, estatísticas numéricas, frequências categóricas,
   cobertura temporal e indicadores de qualidade na amostra atual.
 - Comparar hashes das saídas caso seja necessário comprovar identidade byte a byte.
-- Definir o schema de negócio (tipos, categorias, classe positiva) e as três ou
-  mais regras rígidas de qualidade.
-- Definir os cenários de drift da produção simulada.
+
+O schema de negócio (alvo e classe positiva em `configs/preparacao.json`; contrato
+de qualidade em `configs/validacao.json`) e os cenários de drift da produção
+simulada (`configs/simulacao.json`) já estão definidos.
