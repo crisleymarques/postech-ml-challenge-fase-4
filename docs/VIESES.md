@@ -53,7 +53,7 @@ distingue proposta individual de conjunta. A ausência de atributos protegidos
   desfecho saem da amostra.
 - **Corte por FICO.** A partição de teste não contém nenhum registro com
   `fico_range_low` abaixo de 660 (ver Seção 3). O desempenho do modelo sobre a
-  faixa de risco mais baixo é, portanto, **desconhecido** e não avaliado.
+  faixa de menor pontuação FICO é, portanto, **desconhecido** e não avaliado.
 - **Período 2007–2018.** Inclui a crise de 2008; a relação entre perfil e
   desfecho não é estacionária no tempo.
 
