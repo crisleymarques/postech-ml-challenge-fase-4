@@ -100,10 +100,11 @@ Durante o setup, foram verificadas a consistência das dependências,
 as importações das bibliotecas e a disponibilidade de Ruff e pytest.
 A análise estática também passou.
 
-Essas verificações não validam o pipeline completo. As etapas de obtenção,
+Essas verificações de ambiente não validam o pipeline completo. As etapas de obtenção,
 preparação, treinamento, validação, simulação (Data e Concept Drift), predição,
 detecção e análise de drift, além dos logs, métricas e alertas e do dashboard,
-possuem testes isolados descritos abaixo.
+possuem testes isolados descritos abaixo. A demonstração sintética integrada
+está descrita em [Validação de ponta a ponta — ENT-01](#validação-de-ponta-a-ponta--ent-01).
 
 ## Arquitetura e contratos
 
@@ -1009,6 +1010,75 @@ quando confirmado por um relatório válido.
 uv run pytest tests/observabilidade/dashboard/ tests/observabilidade/integracao/test_alertas_dashboard_regressoes.py -q
 ```
 
+## Validação de ponta a ponta — ENT-01
+
+O módulo [monitoramento.integracao](src/monitoramento/integracao.py) encadeia os
+serviços reais de preparação, contrato Pandera, treinamento do baseline,
+simulação, inferência, detecção Evidently, análise PSI/K-S e observabilidade.
+Gera **6.000 registros inteiramente sintéticos**, com 3.600 para treino, 1.200
+para validação, 600 para teste e 600 reservados para produção simulada.
+Esses exemplos demonstram integração; não representam resultados do Lending Club
+nem substituem a execução final com o dataset escolhido pelo grupo.
+
+Na raiz do projeto, com o ambiente já preparado:
+
+```powershell
+uv run --no-sync python -m monitoramento.integracao --output-dir reports/runs/ent01-demo-a
+uv run --no-sync python -m monitoramento.integracao --output-dir reports/runs/ent01-demo-b --compare-to reports/runs/ent01-demo-a/resultado.json
+```
+
+Use diretórios novos a cada repetição. O comando recusa destinos existentes,
+não baixa dados, não consulta bancos e não lê datasets ou modelos reais. As
+configurações existentes são copiadas para a demonstração, ajustando identidade
+e caminhos; features, algoritmo, regras de qualidade, transformações e limiares
+permanecem os definidos em `configs/`. A semente `--seed` controla a origem
+sintética; as etapas mantêm suas sementes já configuradas.
+
+| Critério do card #23 | Verificação e evidência dentro da saída |
+|---|---|
+| Contrato aprova dados válidos | `runs/validacao-reference/quality.json` e `runs/validacao-production/quality.json` |
+| Lote inválido bloqueado com erro | Gerador F1-04 e rejeição em `runs/rejeicao-reference/`; produção inválida rejeitada em `runs/rejeicao-production/`; inferência recusada em `runs/predicao-bloqueada/`, sem predições |
+| Baseline gera predições | CSV indicado em `runs/predicao/manifest.json`, com 600 IDs da produção reservada e scores entre 0 e 1 |
+| Drift estatisticamente evidenciado | `runs/deteccao/drift.json`, `drift.html` e `runs/analise/analise.json`; cinco variáveis alteradas detectadas e confirmadas |
+| Logs, métricas e alertas coerentes | `logs/resumo.json`, `saude/saude.json`, `alertas/alertas.json` e fontes carregáveis pelo dashboard |
+| Execução reproduzível | Segunda execução com `--compare-to`: compara hashes da origem, features e predições, além dos resultados por variável dos dois relatórios estatísticos |
+
+O fluxo espera **13 execuções: 10 sucessos, 2 rejeições e 1 falha esperada**.
+As rejeições recebem `QUALIDADE_REPROVADA`; a falha é a tentativa deliberada
+de inferência sobre dados reprovados. O resultado geral só é aprovado quando
+esses estados e as evidências conferem. Código de saída `0` indica demonstração
+aprovada e `1` indica falha; `resultado.json` registra o resultado quando a
+persistência está disponível. Uma primeira execução deixa
+`criterios.reproducibilidade_confirmada` nulo; a comparação bem-sucedida marca
+esse campo como verdadeiro. Uma comparação divergente reprova a demonstração.
+
+O relatório separa drift por variável do alerta de conjunto: na demonstração
+com semente 42, 5/22 variáveis mudam, abaixo do limiar de conjunto de 0,5.
+Isso não impede os alertas da análise estatística e das métricas de saúde.
+Data Drift não comprova Concept Drift, causalidade ou queda de desempenho.
+Horários, durações, espaço livre e alertas operacionais correspondentes podem
+variar; não entram na comparação determinística.
+
+Para visualizar a execução, abra o dashboard existente e ajuste as quatro
+fontes da barra lateral conforme `fontes_dashboard` em `resultado.json`:
+
+```powershell
+uv run --no-sync streamlit run src/monitoramento/observabilidade/dashboard/app.py
+```
+
+Para a primeira saída do exemplo: `reports/runs/ent01-demo-a/runs`,
+`reports/runs/ent01-demo-a/logs/resumo.json`,
+`reports/runs/ent01-demo-a/saude/saude.json` e
+`reports/runs/ent01-demo-a/alertas/alertas.json`.
+
+Os testes executam o fluxo sem simular os serviços, repetem os resultados,
+verificam preservação de destinos, diagnóstico de falha e renderização das
+cinco abas do Streamlit com os artefatos produzidos:
+
+```powershell
+uv run --no-sync pytest tests/integracao/test_ponta_a_ponta.py -q
+```
+
 ## Convenção de commits
 
 Os commits seguem o formato:
@@ -1114,6 +1184,10 @@ Concluídos:
   contraste controlado das mesmas linhas sob Data Drift e Concept Drift,
   decomposição das variações de log-odds por feature, limitações da inferência
   causal e medidas corretivas em [docs/CAUSAL.md](docs/CAUSAL.md).
+- Integração sintética de ponta a ponta (ENT-01, #23), com comando reproduzível,
+  comparação de duas execuções, bloqueio de produção inválida e renderização
+  do dashboard. Em 16/11/2026, a suíte passou com **645 testes** e Ruff passou
+  em `src` e `tests`, no ambiente local existente.
 
 Pendentes:
 
@@ -1121,8 +1195,8 @@ Pendentes:
 - Fixação da versão remota do dataset e revisão das estatísticas anteriores
   para a amostra atual, conforme ressalvas em docs/DATASET.md.
 - Definição do cenário de controle da produção simulada.
-- Execução dos testes e Ruff no ambiente definido pelo `uv.lock` após estas
-  correções; métricas e resultados históricos não foram reexecutados.
-- Validação funcional integrada do pipeline com dados sintéticos, além dos
-  testes isolados de obtenção, de preparação do dataset, de treinamento e de
-  validação.
+- Reexecução das métricas e dos resultados históricos do dataset real após
+  as correções; os testes sintéticos e Ruff foram executados na ENT-01.
+- Execução final integrada com o Lending Club para a entrega. A demonstração
+  sintética ENT-01 e seus testes estão implementados conforme a seção acima;
+  não reexecutam nem substituem os resultados históricos do dataset real.
