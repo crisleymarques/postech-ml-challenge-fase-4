@@ -410,7 +410,9 @@ Logs não incluem amostras de linhas, features individuais, PII ou credenciais.
 Relatórios HTML devem ser revisados antes de compartilhamento: ferramentas
 de relatório podem incluir valores e categorias do dataset. O dashboard
 prioriza resultados agregados e referências a artefatos locais.
-O prazo de retenção e a revisão de privacidade permanecem na governança.
+O inventário de dados pessoais, a base legal da decisão de crédito, o plano de
+retenção e descarte e os princípios de Privacy by Design e by Default estão em
+[docs/LGPD.md](LGPD.md).
 
 ## Artefatos, persistência e etapas planejadas
 
