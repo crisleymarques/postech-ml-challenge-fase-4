@@ -29,16 +29,24 @@ Por isso é tratado como contendo **dados pessoais**, com proteção proporciona
 ## 2. Inventário e classificação dos dados
 
 Classificação conforme os conceitos do Art. 5º da LGPD. O detalhamento coluna a
-coluna consta em [DATASET.md](DATASET.md#campos-pessoais-ou-sensiveis-lgpd).
+coluna consta em [DATASET.md](DATASET.md#campos-pessoais-ou-sensíveis-lgpd).
 
 | Grupo | Exemplos no recorte | Classificação LGPD | Finalidade | Observação |
 |---|---|---|---|---|
 | Identificadores diretos | `id`, `member_id` | Dado pessoal | — | **Excluídos** da base derivada; não entram no projeto |
 | Texto livre / localização granular | `emp_title`, `title`, `desc`, `zip_code` | Dado pessoal (potencial reidentificação) | — | **Excluídos**; reduzem risco de reidentificação |
 | Dados financeiros pessoais | `annual_inc`, `loan_amnt`, `installment`, `dti`, `revol_bal`, `revol_util` | Dado pessoal | Features de risco | Uso interno; expor apenas agregado |
+| Histórico e comportamento de crédito | `delinq_2yrs`, `inq_last_6mths`, `open_acc`, `pub_rec`, `total_acc`, `mort_acc`, `pub_rec_bankruptcies` | Dado pessoal | Features de risco | Uso interno; expor apenas agregado |
+| Finalidade do crédito | `purpose` | Dado pessoal (contexto pessoal) | Feature de risco | Uso interno; expor apenas agregado |
 | Score de crédito | `fico_range_low`, `fico_range_high` | Dado pessoal (proteção reforçada) | Feature de risco | Não integra o rol de **dado sensível** do Art. 5º, II, mas recebe proteção reforçada por impacto na decisão |
+| Perfil socioeconômico | `home_ownership`, `application_type` | Dado pessoal | Features de risco | `application_type` pode indicar aplicação conjunta (titular adicional); expor apenas agregado |
 | Quasi-identificadores | `addr_state`, `issue_d`, `earliest_cr_line`, `emp_length` | Dado pessoal (indireto) | Feature / eixo temporal | Manter agregado; não cruzar com fontes externas |
 | Alvo | `loan_status` | Derivado de dado pessoal | Rótulo de treino | `Charged Off` = 1, `Fully Paid` = 0 |
+
+Os demais campos do recorte são atributos do contrato e da classificação de risco
+(`term`, `int_rate`, `grade`, `sub_grade`, `verification_status`,
+`initial_list_status`), o identificador técnico pseudônimo `record_id` e o alvo.
+Todos ficam sujeitos às medidas das Seções 4 e 5.
 
 **Nota técnica:** a LGPD define como sensível (Art. 5º, II) dados de origem
 racial/étnica, convicção religiosa, opinião política, filiação sindical/religiosa/
@@ -151,7 +159,7 @@ limpos. O descarte é registrado quando aplicável, conforme a governança da eq
 
 | Critério | Seção | Evidência |
 |---|---|---|
-| Campos pessoais/sensíveis identificados | 2 | Inventário com classificação por grupo + [DATASET.md](DATASET.md#campos-pessoais-ou-sensiveis-lgpd) |
+| Campos pessoais/sensíveis identificados | 2 | Inventário com classificação por grupo + [DATASET.md](DATASET.md#campos-pessoais-ou-sensíveis-lgpd) |
 | Tratamento e proteção de PII descritos | 4 | Tabela de medidas com implementação correspondente |
 | Base legal considerada para decisões de crédito | 3 | Art. 7º, X e IX; Art. 20; teste de balanceamento |
 | Plano de retenção/descarte documentado | 6 | Tabela com prazos, locais e método de descarte |
