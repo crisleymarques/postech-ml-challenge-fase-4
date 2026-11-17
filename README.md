@@ -16,6 +16,7 @@ conforme o grupo define escopo e implementação.
 | [Arquitetura e contratos](docs/ARQUITETURA.md) | Fluxo implementado e interfaces planejadas |
 | [Dataset — PREP-02](docs/DATASET.md) | Origem, download, amostragem, análise e limitações dos dados |
 | [Proteção de dados e LGPD — F4-01](docs/LGPD.md) | PII, base legal da decisão de crédito, retenção e Privacy by Design/Default |
+| [Vieses e mitigação — F4-02](docs/VIESES.md) | Fontes de viés, proxies, limitações, impactos e medidas de mitigação |
 
 ## Ambiente de desenvolvimento
 
@@ -1103,6 +1104,10 @@ Concluídos:
   X e IX; Art. 20), medidas de tratamento e proteção de PII, plano de retenção e
   descarte e princípios de Privacy by Design e by Default em
   [docs/LGPD.md](docs/LGPD.md).
+- Análise de riscos de vieses e medidas de mitigação (F4-02), com fontes
+  potenciais de viés (seleção, proxies, rótulo/vazamento e desbalanceamento),
+  limitações do modelo e da análise, impactos das decisões enviesadas e medidas
+  de mitigação em [docs/VIESES.md](docs/VIESES.md).
 
 Pendentes:
 
