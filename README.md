@@ -17,6 +17,7 @@ conforme o grupo define escopo e implementação.
 | [Dataset — PREP-02](docs/DATASET.md) | Origem, download, amostragem, análise e limitações dos dados |
 | [Proteção de dados e LGPD — F4-01](docs/LGPD.md) | PII, base legal da decisão de crédito, retenção e Privacy by Design/Default |
 | [Vieses e mitigação — F4-02](docs/VIESES.md) | Fontes de viés, proxies, limitações, impactos e medidas de mitigação |
+| [Análise causal — F4-03](docs/CAUSAL.md) | Cadeias causais, contraste controlado, limitações e medidas corretivas |
 
 ## Ambiente de desenvolvimento
 
@@ -1108,6 +1109,11 @@ Concluídos:
   potenciais de viés (seleção, proxies, rótulo/vazamento e desbalanceamento),
   limitações do modelo e da análise, impactos das decisões enviesadas e medidas
   de mitigação em [docs/VIESES.md](docs/VIESES.md).
+- Análise causal da degradação do modelo (F4-03), com hipóteses causais
+  explícitas (H1–H6), cadeia causal do contexto econômico às decisões,
+  contraste controlado das mesmas linhas sob Data Drift e Concept Drift,
+  decomposição das variações de log-odds por feature, limitações da inferência
+  causal e medidas corretivas em [docs/CAUSAL.md](docs/CAUSAL.md).
 
 Pendentes:
 
