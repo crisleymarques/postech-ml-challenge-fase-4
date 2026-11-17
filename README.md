@@ -109,18 +109,22 @@ está descrita em [Validação de ponta a ponta — ENT-01](#validação-de-pont
 ## Arquitetura e contratos
 
 A arquitetura é um pipeline local em lote: preparação e separação → validação
-de dados → treinamento e avaliação, etapas implementadas; em paralelo ao treino,
-a base reservada deverá alimentar simulação → validação de lotes → predição →
-detecção. Lotes inválidos são bloqueados antes de chegar ao modelo. As etapas
-implementadas exportam eventos e resultados para monitoramento.
+de dados → treinamento e avaliação. A base reservada alimenta simulação →
+validação de lotes → predição; a detecção e a análise estatística comparam o lote
+simulado com a referência congelada no treinamento. No cenário de Concept Drift,
+a avaliação compara o desempenho com os rótulos originais e os alterados.
+Lotes inválidos são bloqueados antes de chegar ao modelo. As etapas exportam
+eventos e resultados para logs → métricas de saúde → alertas → dashboard.
 
 O dashboard **Streamlit** foi escolhido para observabilidade, com eventos
 JSONL, métricas JSON e relatórios HTML do Evidently. MLflow não integra a
-arquitetura base. As métricas específicas e os limiares de drift serão definidos
-antes da implementação da detecção.
+arquitetura base. Os métodos e limiares de drift estão definidos em
+[configs/deteccao.json](configs/deteccao.json) e
+[configs/analise_drift.json](configs/analise_drift.json); as métricas de saúde e
+seus limiares estão em [configs/metricas_saude.json](configs/metricas_saude.json).
 
 Os [contratos entre componentes](docs/ARQUITETURA.md) detalham o diagrama,
-os formatos CSV/JSON/JSONL, manifestos, argumentos futuros dos scripts,
+os formatos CSV/JSON/JSONL, manifestos, argumentos dos scripts,
 estados de execução e artefatos produzidos por etapa. Dados de treino,
 validação e teste ficam separados da base e dos lotes de produção simulada;
 a referência de drift é congelada a partir das features de treino.
@@ -131,6 +135,24 @@ simulação (Data e Concept Drift), a predição, a detecção e a análise esta
 do drift, a consolidação dos logs operacionais, as métricas de saúde, os alertas
 e o dashboard Streamlit. A documentação de arquitetura
 não substitui as evidências funcionais nem a governança exigidas na entrega.
+
+### Ordem de execução
+
+Execute os comandos das seções abaixo na raiz do projeto, nesta ordem:
+
+| Fluxo | Sequência |
+|---|---|
+| Referência e baseline | PREP-02 → preparação (F1-01) → validação `reference` (F1-03) → treinamento (F1-02) |
+| Bloqueio de qualidade | Gerar lote inválido (F1-04) → validação `reference`, esperando rejeição e código `2` |
+| Data Drift | Simulação (F2-01) → validação `production` → predição (F2-02); detecção (F2-03) e análise PSI/K-S (F2-04) usam os manifestos do treino e da simulação |
+| Concept Drift | Simulação de conceito (F2-05) → validação `production` → avaliação com os rótulos dos dois conceitos |
+| Monitoramento | Consolidar logs (F3-01) → coletar saúde (F3-02) → integrar alertas (F3-03) → abrir dashboard (F3-04) |
+
+Substitua os marcadores `<run_...>` pelos IDs dos manifestos produzidos na sua
+execução; eles não são valores literais para copiar. Confira os caminhos de
+entrada em `configs/` e use novos IDs e diretórios ao repetir etapas. A
+[demonstração ENT-01](#validação-de-ponta-a-ponta--ent-01) oferece um comando
+integrado com dados inteiramente sintéticos.
 
 ## Dataset — PREP-02
 
@@ -284,6 +306,11 @@ uv run pytest tests/test_treinamento.py -q
 
 ### Baseline: regressão logística
 
+Os números abaixo são resultados históricos documentados, não recalculados
+nesta consolidação. O mesmo vale para os resultados reais citados nas demais
+etapas: revalidações com outras referências/lotes estão identificadas em cada
+seção e não devem ser combinadas como se fossem uma única execução.
+
 O baseline usa regressão logística com `class_weight="balanced"`, semente 42 e
 22 features (14 numéricas e 8 categóricas) sobre as partições de referência. O
 `model_id` é `baseline-logreg-820dbb61` e a referência `ref-820dbb61`. A seleção
@@ -432,8 +459,8 @@ manifesto do produtor (`stage: simulacao`) com o período, as variáveis
 alteradas, as transformações e os parâmetros efetivos.
 
 ```powershell
-uv run simular-data-drift ^
-  --config configs/simulacao.json ^
+uv run simular-data-drift `
+  --config configs/simulacao.json `
   --batch-id batch-f201
 ```
 
@@ -508,16 +535,16 @@ serializados em `__main__`; novos modelos usam o módulo estável de
 pré-processamento. Nenhum ajuste é realizado sobre o lote de produção.
 
 ```powershell
-uv run python src/monitoramento/validacao.py ^
-  --config configs/validacao.json --profile production ^
-  --input-manifest reports/runs/<run_simulacao>/manifest.json ^
+uv run python src/monitoramento/validacao.py `
+  --config configs/validacao.json --profile production `
+  --input-manifest reports/runs/<run_simulacao>/manifest.json `
   --run-id run-f202-validacao
 
-uv run gerar-predicoes ^
-  --config configs/predicao.json ^
-  --input-manifest reports/runs/<run_treinamento>/manifest.json ^
-  --input-manifest reports/runs/<run_simulacao>/manifest.json ^
-  --input-manifest reports/runs/run-f202-validacao/manifest.json ^
+uv run gerar-predicoes `
+  --config configs/predicao.json `
+  --input-manifest reports/runs/<run_treinamento>/manifest.json `
+  --input-manifest reports/runs/<run_simulacao>/manifest.json `
+  --input-manifest reports/runs/run-f202-validacao/manifest.json `
   --run-id run-f202-predicao
 ```
 
@@ -567,10 +594,10 @@ etapas anteriores. A referência é lida a partir dos metadados do modelo
 (numéricas e categóricas) para aplicar os tipos corretos antes da comparação.
 
 ```powershell
-uv run detectar-drift ^
-  --config configs/deteccao.json ^
-  --input-manifest reports/runs/<run_treinamento>/manifest.json ^
-  --input-manifest reports/runs/<run_simulacao>/manifest.json ^
+uv run detectar-drift `
+  --config configs/deteccao.json `
+  --input-manifest reports/runs/<run_treinamento>/manifest.json `
+  --input-manifest reports/runs/<run_simulacao>/manifest.json `
   --run-id run-f203-deteccao
 ```
 
@@ -663,10 +690,10 @@ dois manifestos usados na detecção: a referência (features de treino) e o lot
 simulado de produção, com verificação de hash e de `dataset_id`.
 
 ```powershell
-uv run analisar-drift ^
-  --config configs/analise_drift.json ^
-  --input-manifest reports/runs/<run_treinamento>/manifest.json ^
-  --input-manifest reports/runs/<run_simulacao>/manifest.json ^
+uv run analisar-drift `
+  --config configs/analise_drift.json `
+  --input-manifest reports/runs/<run_treinamento>/manifest.json `
+  --input-manifest reports/runs/<run_simulacao>/manifest.json `
   --run-id run-f204-analise
 ```
 
@@ -749,19 +776,19 @@ reprodutibilidade, conforme [configs/simulacao_concept.json](configs/simulacao_c
 | Manifesto, eventos, métricas e config | `reports/runs/<run_id>/` |
 
 ```powershell
-uv run simular-concept-drift ^
-  --config configs/simulacao_concept.json ^
-  --batch-id batch-f205 ^
+uv run simular-concept-drift `
+  --config configs/simulacao_concept.json `
+  --batch-id batch-f205 `
   --run-id run-f205-concept
 ```
 
 Antes da avaliação, aprove as features do cenário pelo contrato de produção:
 
 ```powershell
-uv run python src/monitoramento/validacao.py ^
-  --config configs/validacao.json ^
-  --profile production ^
-  --input-manifest reports/runs/<run_concept_drift>/manifest.json ^
+uv run python src/monitoramento/validacao.py `
+  --config configs/validacao.json `
+  --profile production `
+  --input-manifest reports/runs/<run_concept_drift>/manifest.json `
   --run-id <run_validacao_concept>
 ```
 
@@ -774,11 +801,11 @@ os registros e as features são os mesmos, apenas a relação perfil–desfecho 
 o que isola a mudança de conceito da mudança de distribuição.
 
 ```powershell
-uv run avaliar-concept-drift ^
-  --config configs/avaliacao_concept.json ^
-  --input-manifest reports/runs/<run_treinamento>/manifest.json ^
-  --input-manifest reports/runs/<run_concept_drift>/manifest.json ^
-  --input-manifest reports/runs/<run_validacao_concept>/manifest.json ^
+uv run avaliar-concept-drift `
+  --config configs/avaliacao_concept.json `
+  --input-manifest reports/runs/<run_treinamento>/manifest.json `
+  --input-manifest reports/runs/<run_concept_drift>/manifest.json `
+  --input-manifest reports/runs/<run_validacao_concept>/manifest.json `
   --run-id run-f205-avaliacao
 ```
 
@@ -1078,6 +1105,86 @@ cinco abas do Streamlit com os artefatos produzidos:
 ```powershell
 uv run --no-sync pytest tests/integracao/test_ponta_a_ponta.py -q
 ```
+
+## Relatórios e evidências
+
+| Evidência | Onde consultar |
+|---|---|
+| Origem, amostra e separação do dataset | [docs/DATASET.md](docs/DATASET.md) |
+| Aprovação/rejeição do contrato | `reports/runs/<run_id>/quality.json` |
+| Baseline e desempenho por partição | `models/<model_id>/metadata.json` e `evaluation.json` |
+| Drift por variável e interpretação | `reports/runs/<run_id>/drift.json`, `drift.html` e `analise.json`, nas respectivas etapas |
+| Comparação de desempenho entre conceitos | `reports/runs/<run_id>/performance.json` |
+| Saúde, falhas e alertas | `reports/logs/resumo.json`, `reports/saude/saude.json` e `reports/alertas/alertas.json`, exibidos no dashboard |
+| Integração e reprodutibilidade sintéticas | `resultado.json` e artefatos descritos na [ENT-01](#validação-de-ponta-a-ponta--ent-01) |
+
+Os artefatos gerados são locais e não acompanham automaticamente o repositório.
+`manifest.json`, `config.json`, `events.jsonl` e `metrics.json` vinculam cada
+resultado à execução, às entradas e aos parâmetros. Consulte os caminhos do
+manifesto correspondente; IDs históricos não garantem arquivos disponíveis em
+outro ambiente. Antes de compartilhar evidências, revise seu conteúdo para
+evitar exposição de dados pessoais, inclusive nos relatórios HTML.
+
+## Governança, privacidade e vieses
+
+### LGPD, PII e retenção — F4-01
+
+O [plano de proteção de dados](docs/LGPD.md) trata os dados financeiros e os
+quasi-identificadores como dados pessoais. A base derivada exclui identificadores
+diretos, textos livres e localização granular; usa `record_id` técnico e permanece
+pseudonimizada, sem garantia de anonimização. Dados e modelos ficam fora do Git;
+logs, métricas e dashboard priorizam contagens e agregados. Minimização na origem,
+separação dos dados e padrões de não exposição concretizam Privacy by Design e
+by Default.
+
+Para a decisão de crédito, o plano discute proteção do crédito (Art. 7º, X),
+legítimo interesse com teste de balanceamento (Art. 7º, IX) e obrigação
+legal/regulatória quando aplicável. Transparência e revisão das decisões são
+previstas no processo de negócio, fora do código deste pipeline acadêmico.
+Essa documentação não representa validação jurídica para uso em produção.
+
+Os prazos de retenção são **propostas a revisar pela equipe**, contados do fim
+do ciclo de avaliação: até 12 meses para dados e modelos (ou enquanto sustentados,
+no caso dos modelos), 12 meses para logs, saúde e alertas e 24 meses para relatórios
+de análise e HTML usados na defesa. Predições simuladas em
+`data/analysis/<scenario_id>/<batch_id>/<model_id>/predictions.csv` permanecem até
+o fim da avaliação. O descarte inclui arquivos, cópias e temporários e cabe à
+equipe; não há rotina automática de retenção apresentada como implementada.
+A licença do dataset e a revisão dos prazos permanecem pendentes.
+
+### Vieses e mitigação — F4-02
+
+A [análise de vieses](docs/VIESES.md) identifica seleção de contratos aprovados
+com desfecho definitivo, desbalanceamento e proxies como `addr_state`,
+`home_ownership`, `annual_inc` e `emp_length`. As colunas `grade`, `sub_grade`,
+`int_rate` e `installment` já ficam fora das features do baseline para reduzir
+risco de vazamento e reprodução da política do credor.
+
+Na análise histórica do teste do `baseline-logreg-820dbb61`, a taxa de falsos
+positivos foi 39,67% para `RENT` e 25,44% para `MORTGAGE`: bons pagadores podem
+ser sinalizados como risco de forma desigual. São diferenças descritivas entre
+proxies, sem atributos protegidos nem intervalos de confiança; não comprovam
+discriminação ou causalidade. Métricas de equidade, reponderação, calibração,
+revisão de proxies e acompanhamento por segmento são medidas propostas, ainda
+sujeitas à avaliação da equipe.
+
+## Análise causal — F4-03
+
+A [análise causal](docs/CAUSAL.md) relaciona as mudanças econômicas simuladas ao
+drift e ao comportamento do baseline por contraste nas mesmas 10.000 linhas.
+No experimento histórico de Data Drift (`batch-f201`), o score médio passou de
+0,4299 para 0,5328 e a taxa de positivos de 33,52% para 57,32%, enquanto o ROC-AUC
+permaneceu próximo de 0,6825. O resultado é compatível com deslocamento do score
+sob limiar fixo, sem perda relevante de ordenação nesse cenário.
+
+No Concept Drift (`batch-f205`), features e scores permaneceram iguais e 1.916
+rótulos foram alterados; o ROC-AUC passou de 0,6825 para 0,4612. As hipóteses
+H1–H6, a decomposição do modelo e as limitações estão no documento: choque
+simulado, confundimento temporal, contrafactual assumido e ausência de inferência
+causal formal. Esses resultados não demonstram efeitos de uma recessão real.
+Data Drift, Concept Drift e queda de desempenho são evidências distintas.
+Recalibração, retreino condicionado à avaliação com rótulos e revisão das features
+são medidas propostas; o alerta de drift indica necessidade de investigação.
 
 ## Convenção de commits
 
